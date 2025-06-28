@@ -1,0 +1,176 @@
+Aşağıda "Codeyzer Portfoy" adlı; gram altın, gram gümüş, döviz, fonlar ve hisse senetlerini içeren, anlık fiyatları çekip toplam portföy değerini ve varlık kırılımlarını gösteren bir React + TypeScript + Material-UI uygulamasını sıfırdan geliştirmek için ayrıntılı bir yol haritası bulacaksınız.
+
+────────────────────────────
+1. İhtiyaçların Netleştirilmesi
+────────────────────────────
+• Desteklenecek varlık türleri  
+  – Gram Altın (GAU)  
+  – Gram Gümüş (XAG/TRY)  
+  – Döviz (USD/TRY, EUR/TRY, GAU/TRY, XAG/TRY)  
+  – Borsa Yatırım Fonları (ör. TEFAS kodu)  
+  – Hisse Senetleri (BIST kodu)
+
+• Kullanıcı İşlevleri  
+  1. Varlık ekleme / silme / güncelleme  
+  2. Anlık fiyatları otomatik çekme (manuel "Güncelle" butonu da)  
+  3. Portföy toplam değeri ve yüzde dağılımı  
+  4. Varlık bazlı detay sayfası  
+  5. Verilerin LocalStorage'da saklanması (opsiyonel backend)
+
+• Teknik Gereksinimler  
+  – React 18 + TypeScript  
+  – Material-UI (MUI v5)  
+  – Grafik için Recharts veya MUI X Charts  
+  – Fiyat verisi için REST API (örn. Yahoo Finance, Alpha Vantage, FinanceData, goldapi.io)  
+  – Fiyat verisi: Yahoo Finance (ücretsiz, anahtar gerektirmez) + TEFAS RSS (fon fiyatı)  
+  – State yönetimi: Redux Toolkit  
+  – State yönetimi: Redux Toolkit + redux-persist (veri kalıcılığı için)  
+  – Birim testleri: Vitest / Jest + React Testing Library
+
+────────────────────────────
+2. Fiyat API'sini Seçme & Prototip
+────────────────────────────
+• Altın/Gümüş/Döviz/Hisse: Yahoo Finance quote/chart uçları (ücretsiz, 15 dk gecikmeli)  
+• Fon: TEFAS RSS (fon)  
+• Seçilen çözüm: Yahoo Finance (tüm varlıklar) + TEFAS RSS (fon). API anahtarı gerekmez.  
+• Bir Postman/Insomnia oturumunda endpoint'leri test ederek veri formatlarını doğrulayın.  
+• Hata payını azaltmak için response'ları TypeScript interface'lerinde modelleyin.
+
+────────────────────────────
+3. Proje Kurulumu
+────────────────────────────
+1) Yeni proje:  
+   # Proje kök dizininde oluştur   
+   npx create-vite@latest . --template react-ts  
+   npm install @mui/material @mui/icons-material @emotion/react @emotion/styled axios recharts dayjs  
+   npm install --save-dev eslint prettier vitest @testing-library/react
+
+2) Klasör yapısı önerisi  
+src/  
+  api/           → REST çağrıları  
+  components/    → UI bileşenleri  
+  contexts/      → ThemeContext  
+  store/         → Redux store, slices  
+  hooks/         → usePrices, useLocalStorage  
+  models/        → TypeScript tipleri  
+  pages/         → Dashboard, Settings  
+  utils/         → yardımcı fonksiyonlar  
+  App.tsx, main.tsx
+
+────────────────────────────
+4. Temel Altyapı
+────────────────────────────
+• MUI ThemeProvider + createTheme ile koyu/açık tema  
+• React Router (opsiyonel) → / (dashboard) ve /settings rotaları  
+• Redux store (configureStore) + portfolioSlice  
+• Global PortföyContext  
++• (Opsiyonel) ThemeContext Provider  
+  ```ts
+  interface Holding {
+    id: string;            // uuid
+    type: 'CURRENCY' | 'FUND' | 'STOCK';
+    symbol: string;        // USDTRY, EURTRY, GAUTRY, XAGTRY, ISCTR
+    amount: number;        // adet / gram
+  }
+  interface PortfolioState { holdings: Holding[] }
+  ```
+
+────────────────────────────
+4.1. Material-UI Grid API Kullanımı (Güncel)
+────────────────────────────
+• MUI Grid'in YENİ API'sini kullan (eski item prop'u DEĞİL!)
+• ❌ ESKİ: `<Grid item xs={12} md={4}>`
+• ✅ YENİ: `<Grid size={{ xs: 12, md: 4 }}>`
+
+Örnekler:
+```tsx
+// Temel container + items
+<Grid container spacing={2}>
+  <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+    <Card>Content</Card>
+  </Grid>
+  <Grid size={{ xs: 12, sm: 6, md: 8 }}>
+    <Card>Content</Card>
+  </Grid>
+</Grid>
+
+// Responsive breakpoints
+<Grid container spacing={{ xs: 1, sm: 2, md: 3 }}>
+  <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
+    <Item>Responsive Item</Item>
+  </Grid>
+</Grid>
+
+// Auto sizing
+<Grid container spacing={2}>
+  <Grid size="auto">Fixed width content</Grid>
+  <Grid size="grow">Flexible content</Grid>
+  <Grid size={4}>4 columns</Grid>
+</Grid>
+```
+
+• Container props: `container`, `spacing`, `columns`, `direction`
+• Item props: `size`, `offset` (eski xs, sm, md, lg, xl props YOK!)
+• size değerleri: number (1-12), "auto", "grow", object { xs: 12, md: 6 }
+
+────────────────────────────
+5. Fiyat Servisi
+────────────────────────────
+• api/priceService.ts  
+  – Axios ile Yahoo Finance '/v7/finance/quote?symbols=' veya '/v8/finance/chart' uçlarına GET isteği  
+  – 5-10 saniyelik polling ya da manuel refresh  
+  – Caching ve error handling (retry/backoff)  
+• hook: usePrices(symbols[]) → { data, loading, error }
+
+────────────────────────────
+6. Bileşen Geliştirme Sırası
+────────────────────────────
+1) HoldingForm  
+   – Autocomplete + TextField ile varlık tipi ve sembol seçimi  
+   – Miktar girişi, "Ekle" butonu
+
+2) HoldingsTable  
+   – MUI DataGrid veya simple Table  
+   – Anlık fiyat, toplam değer (fiyat × miktar)  
+   – Sil/Güncelle ikon butonları
+
+3) PortfolioSummary  
+   – Toplam portföy değeri (TRY)  
+   – Yüzde dağılım grafiği (Pie / Doughnut)
+
+4) AssetBreakdownChart  
+   – Bar veya Pie chart; her varlık grubunun değeri
+
+5) Layout & AppBar  
+   – Üstte sabit başlık, sağda tema switcher + "Fiyatları Güncelle"
+
+────────────────────────────
+7. Durum Yönetimi & Persist
+────────────────────────────
+• Redux Toolkit slice'ları: portfolioSlice (add/update/delete)  
+• redux-persist ile holdings state'ini LocalStorage'da saklamak  
+• PersistGate ile ilk yüklemede store rehydrate
+
+────────────────────────────
+8. Test & Kalite
+────────────────────────────
+• Birim testi:  
+  – priceService fetch & error path  
+  – reducer aksiyonları  
+  – component snapshot / interaction  
+• ESLint & Prettier hususlarının CI'da çalışması
+
+────────────────────────────
+9. Dağıtım
+────────────────────────────
+• Vercel, Netlify veya GitHub Pages (vite.config'da base ayarı)  
+• Ortam değişkenleri (API_KEY) için .env ve Vite env importer  
+• README'de kullanım, API anahtarı alma ve .env örneği
+
+────────────────────────────
+10. Opsiyonel Geliştirmeler
+────────────────────────────
+✓ Kullanıcı doğrulaması + backend (Express + PostgreSQL)  
+✓ Portföy getiri grafiği (geçmiş fiyat serileri çekerek)  
+✓ CSV/Excel içe-dışa aktarma  
+✓ Bildirim & alarm (fiyat eşiklerine ulaşınca) 
