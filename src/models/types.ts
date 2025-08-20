@@ -44,6 +44,7 @@ export interface PriceData {
   changePercent: number;
   lastUpdate: string;
   name?: string;
+  historicalData?: HistoricalPrice[]; // Geçmiş veriyi de içerebilir
 }
 
 export interface PortfolioState {
@@ -92,4 +93,9 @@ export interface TefasFund {
   name: string;
   price: number;
   date: string;
+}
+
+export interface HistoricalPrice {
+  date: string; // "YYYY-MM-DD" formatında
+  price: number;
 } 

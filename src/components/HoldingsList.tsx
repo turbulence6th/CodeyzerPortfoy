@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, type MouseEvent } from 'react';
 import { 
   Grid, 
   Paper, 
@@ -19,6 +19,7 @@ import {
 import type { Holding, AssetType, PriceData, CategoryChart } from '../models/types';
 import { useSwipeable } from 'react-swipeable';
 import { StockAnalysisDialog } from './StockAnalysisDialog';
+import { AssetDetailDialog } from './AssetDetailDialog';
 
 interface HoldingsListProps {
   holdings: Holding[];
@@ -37,16 +38,29 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
 }) => {
   const [expandedPanels, setExpandedPanels] = useState<string[]>(['CURRENCY', 'STOCK', 'FUND']);
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false);
-  const [selectedStock, setSelectedStock] = useState<Holding | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
 
   const handleOpenAnalysis = (holding: Holding) => {
-    setSelectedStock(holding);
+    setSelectedHolding(holding);
     setAnalysisDialogOpen(true);
   };
 
   const handleCloseAnalysis = () => {
     setAnalysisDialogOpen(false);
-    setSelectedStock(null);
+    setSelectedHolding(null);
+  };
+
+  const handleOpenDetail = (holding: Holding) => {
+    if (holding.type === 'STOCK' || holding.type === 'FUND') {
+      setSelectedHolding(holding);
+      setDetailDialogOpen(true);
+    }
+  };
+
+  const handleCloseDetail = () => {
+    setDetailDialogOpen(false);
+    setSelectedHolding(null);
   };
 
   const handlePanelChange = (panel: string) => {
@@ -102,7 +116,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   // Varlık türü sıralama önceliği
   const typeOrder: AssetType[] = ['CURRENCY', 'STOCK', 'FUND'];
 
-  // Holdings'leri türe göre grupla ve sembol alfabetik sırala
+  // Holdings'leri türe göre grupla ve sembole göre alfabetik sırala
   const groupedHoldings = holdings.reduce((groups, holding) => {
     const type = holding.type;
     if (!groups[type]) {
@@ -147,15 +161,34 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
       trackMouse: true,
     });
 
+    const handleRowClick = () => {
+      // Sadece swipe edilmemişse detayı aç
+      if (!swiped) {
+        handleOpenDetail(holding);
+      }
+    };
+    
+    // Aksiyon butonlarına tıklandığında ana tıklamayı engelle
+    const handleActionClick = (e: MouseEvent, action: (h: Holding) => void) => {
+      e.stopPropagation();
+      action(holding);
+      setSwiped(false);
+    };
+
     return (
       <Box
         {...handlers}
         key={holding.id}
+        onClick={handleRowClick}
         sx={{
           position: 'relative',
           borderBottom: isLast ? 'none' : '1px solid',
           borderColor: 'divider',
           backgroundColor: 'background.paper',
+          cursor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'pointer' : 'default',
+          '&:hover': {
+            backgroundColor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'action.hover' : 'transparent',
+          }
         }}
       >
         {/* İçerik */}
@@ -255,14 +288,14 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
           }}
         >
           {holding.type === 'STOCK' && (
-            <IconButton size="small" color="info" onClick={() => handleOpenAnalysis(holding)}>
+            <IconButton size="small" color="info" onClick={(e) => handleActionClick(e, handleOpenAnalysis)}>
               <AssessmentIcon size={20} />
             </IconButton>
           )}
-          <IconButton size="small" color="primary" onClick={() => { onEdit(holding); setSwiped(false); }}>
+          <IconButton size="small" color="primary" onClick={(e) => handleActionClick(e, onEdit)}>
             <EditIcon size={20} />
           </IconButton>
-          <IconButton size="small" color="error" onClick={() => { onDelete(holding); setSwiped(false); }}>
+          <IconButton size="small" color="error" onClick={(e) => handleActionClick(e, onDelete)}>
             <DeleteIcon size={20} />
           </IconButton>
         </Box>
@@ -352,7 +385,14 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
       <StockAnalysisDialog
         open={analysisDialogOpen}
         onClose={handleCloseAnalysis}
-        symbol={selectedStock?.symbol ?? null}
+        symbol={selectedHolding?.symbol ?? null}
+      />
+
+      <AssetDetailDialog
+        open={detailDialogOpen}
+        onClose={handleCloseDetail}
+        holding={selectedHolding}
+        priceData={selectedHolding ? prices[selectedHolding.symbol] : null}
       />
     </Grid>
   );

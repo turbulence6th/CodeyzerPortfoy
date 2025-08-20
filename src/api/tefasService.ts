@@ -1,6 +1,6 @@
 import axios from 'axios';
 import dayjs from 'dayjs';
-import type { PriceData } from '../models/types';
+import type { PriceData, HistoricalPrice } from '../models/types';
 
 type TefasApiResponse = {
   data?: Array<{
@@ -206,6 +206,14 @@ export class TefasService {
           }
         }
       }
+      
+      // Tüm geçmiş veriyi de ekle (eski->yeni sıralı)
+      const historicalData: HistoricalPrice[] = items
+        .map(item => ({
+          date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
+          price: item.FIYAT,
+        }))
+        .reverse(); // Grafikte doğru görünmesi için eski->yeni sırala
 
       const priceData: PriceData = {
         symbol: fundCode,
@@ -214,6 +222,7 @@ export class TefasService {
         changePercent,
         lastUpdate: new Date().toISOString(),
         name: latest.FONUNVAN,
+        historicalData,
       };
 
       this.cache.set(fundCode, { data: priceData, timestamp: Date.now() });
@@ -221,6 +230,56 @@ export class TefasService {
     } catch (error) {
       console.error('TEFAS API hatası:', error);
       return null;
+    }
+  }
+
+  async fetchHistoricalFundPrices(
+    fundCode: string,
+    range: '1w' | '1mo' | '3mo'
+  ): Promise<HistoricalPrice[]> {
+    const isDevelopment = import.meta.env.DEV;
+    const endpoint = isDevelopment
+      ? '/api/tefas/api/DB/BindHistoryInfo'
+      : 'https://www.tefas.gov.tr/api/DB/BindHistoryInfo';
+
+    const today = dayjs();
+    let startDate = dayjs();
+
+    switch (range) {
+      case '1w': startDate = today.subtract(7, 'days'); break;
+      case '1mo': startDate = today.subtract(1, 'month'); break;
+      case '3mo': startDate = today.subtract(3, 'months'); break;
+    }
+
+    const formData = new URLSearchParams();
+    formData.append('fontip', 'YAT');
+    formData.append('bastarih', startDate.format('DD.MM.YYYY'));
+    formData.append('bittarih', today.format('DD.MM.YYYY'));
+    formData.append('fonkod', fundCode);
+
+    try {
+      const response = await axios.post<TefasApiResponse>(endpoint, formData, {
+        headers: {
+          Accept: 'application/json, text/javascript, */*; q=0.01',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        timeout: 20000, // extend timeout for larger data
+      });
+
+      const items = response.data?.data;
+      if (!items || items.length === 0) return [];
+
+      // Sort old to new for charting
+      items.sort((a: any, b: any) => parseInt(a.TARIH) - parseInt(b.TARIH)); 
+
+      return items.map(item => ({
+        date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
+        price: item.FIYAT,
+      }));
+    } catch (error) {
+      console.error(`TEFAS API historical data error for ${fundCode}:`, error);
+      throw new Error('TEFAS historical data could not be fetched.');
     }
   }
 

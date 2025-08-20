@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { PriceData } from '../models/types';
+import type { PriceData, HistoricalPrice } from '../models/types';
 import { tefasService } from './tefasService';
 
 // Yahoo Finance Chart API response types
@@ -93,6 +93,71 @@ export class PriceService {
     }
 
     return prices;
+  }
+
+  async fetchHistoricalPrices(
+    symbol: string, 
+    range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y'| '5y' = '1mo'
+  ): Promise<HistoricalPrice[]> {
+    // Eğer fon ise, her zaman TEFAS servisini kullan
+    if (/^[A-Z]{3}$/.test(symbol)) {
+      if (range === '1d') {
+        // Günlük veri için eski hızlı yöntemi kullanabiliriz
+        const priceData = await this.fetchSinglePrice(symbol);
+        return priceData?.historicalData || [];
+      }
+      // Diğer aralıklar için yeni TEFAS fonksiyonunu çağır
+      return tefasService.fetchHistoricalFundPrices(symbol, range as '1w' | '1mo' | '3mo');
+    }
+
+    const transformedSymbol = PriceService.transformSymbol(symbol);
+    const interval = this.getIntervalForRange(range);
+    const url = `${API_BASE_URL}/${transformedSymbol}?range=${range}&interval=${interval}`;
+
+    try {
+      const response = await axios.get<YahooChartResponse>(url, {
+        timeout: 15000,
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (response.data?.chart?.result?.[0]) {
+        const result = response.data.chart.result[0];
+        const timestamps = result.timestamp || [];
+        const prices = result.indicators?.quote?.[0]?.close || [];
+
+        const historicalData: HistoricalPrice[] = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          if (prices[i] !== null && timestamps[i] !== null) {
+            historicalData.push({
+              date: new Date(timestamps[i] * 1000).toISOString().split('T')[0],
+              price: prices[i],
+            });
+          }
+        }
+        return historicalData;
+      }
+      return [];
+    } catch (error) {
+      console.error(`❌ Yahoo Finance historical data error for ${symbol}:`, error);
+      throw new Error('Geçmiş fiyat verileri alınamadı.');
+    }
+  }
+
+  private getIntervalForRange(range: string): string {
+    switch (range) {
+      case '1d': return '5m';
+      case '1w':
+      case '5d': return '15m'; // Bu hisseler için hala geçerli olabilir
+      case '1mo': return '1d';
+      case '3mo':
+      case '6mo':
+      case '1y':
+      case '3y':
+      case '5y':
+        return '1d';
+      default:
+        return '1d';
+    }
   }
 
   private async fetchSinglePrice(symbol: string): Promise<PriceData | null> {
@@ -231,32 +296,37 @@ export class PriceService {
         const result = response.data.chart.result[0];
         const meta = result.meta;
         
-        // Historical data'dan daha stabil karşılaştırma yap (altın için)
         const indicators = result.indicators?.quote?.[0];
         const closePrices = indicators?.close?.filter((price: number | null) => price != null) || [];
         
         const currentPrice = meta.regularMarketPrice;
-        let previousClose = currentPrice; // Varsayılan olarak değişim yok
+
+        if (currentPrice == null) {
+          console.warn(`⚠️ ${symbol}: regularMarketPrice is missing.`);
+          return null;
+        }
         
-        // Son 2 kapanış fiyatını karşılaştır (en stabil yöntem)
+        // Önceki kapanış fiyatını belirlemek için en sağlam yöntem:
+        // Her zaman tarihsel kapanış fiyatlarını birincil kaynak olarak kullan.
+        let previousClose: number | null = null;
+
         if (closePrices.length >= 2) {
-          // Son kapanış (bugün) ve önceki kapanış (dün)
-          const lastClose = closePrices[closePrices.length - 1];
-          const prevClose = closePrices[closePrices.length - 2];
-          
-          // Eğer son kapanış güncel fiyata yakınsa (aynı gün), önceki günü kullan
-          if (Math.abs(lastClose - currentPrice) < Math.abs(prevClose - currentPrice)) {
-            previousClose = prevClose;
-          } else {
-            previousClose = lastClose;
-          }
+          // Listenin sonundaki fiyat en güncel kapanış, sondan ikinci ise bir önceki günün kapanışıdır.
+          // Bazen en güncel kapanış, gün içi bir veri olabilir. Bu yüzden her zaman sondan ikinciyi almak daha güvenilirdir.
+          previousClose = closePrices[closePrices.length - 2];
         } else {
-          // Fallback: meta'dan önceki kapanış
-          previousClose = meta.previousClose ?? (meta as any).chartPreviousClose ?? currentPrice;
+          // Eğer geçmiş veri yetersizse, meta verisine fallback yap.
+          previousClose = meta.previousClose;
+        }
+
+        // Eğer hiçbir şekilde önceki kapanış bulunamazsa, sıfır değişim için mevcut fiyata dön
+        if (previousClose == null) {
+            console.warn(`⚠️ ${symbol}: Önceki kapanış fiyatı belirlenemedi. Değişim 0 olarak ayarlandı.`);
+            previousClose = currentPrice;
         }
         
         const change = currentPrice - previousClose;
-        let changePercent = previousClose !== 0 && previousClose !== currentPrice ? (change / previousClose) * 100 : 0;
+        let changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
         
         // Aşırı yüksek değişim oranlarını sınırla (veri hatası olabilir)
         const MAX_DAILY_CHANGE = 25; // %25 maksimum günlük değişim
