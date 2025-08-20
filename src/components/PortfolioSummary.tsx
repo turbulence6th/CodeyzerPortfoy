@@ -1,5 +1,5 @@
 import React from 'react';
-import { Grid, Paper, Typography } from '@mui/material';
+import { Grid, Paper, Typography, Box } from '@mui/material';
 import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
 
@@ -7,14 +7,18 @@ dayjs.locale('tr');
 
 interface PortfolioSummaryProps {
   totalValue: number;
+  dailyChange: number;
+  dailyChangePercent: number;
   holdingsCount: number;
   loading: boolean;
   error: string | null;
-  lastUpdate: string | null; // Artık string | null
+  lastUpdate: string | null;
 }
 
 export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
   totalValue,
+  dailyChange,
+  dailyChangePercent,
   holdingsCount,
   loading,
   error,
@@ -23,6 +27,8 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
   const lastUpdateFormatted = lastUpdate 
     ? dayjs(lastUpdate).format('DD MMMM YYYY, HH:mm')
     : 'Henüz güncellenmedi';
+  
+  const isPositiveChange = dailyChange >= 0;
 
   return (
     <>
@@ -55,6 +61,22 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
               maximumFractionDigits: 0 
             })}
           </Typography>
+          { !loading && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography 
+                variant="body2" 
+                fontWeight="medium"
+                color={isPositiveChange ? 'success.main' : 'error.main'}
+              >
+                {isPositiveChange ? '+' : ''}
+                {dailyChange.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {' ('}
+                {isPositiveChange ? '+' : ''}
+                {dailyChangePercent.toFixed(2)}%
+                {')'}
+              </Typography>
+            </Box>
+          )}
         </Paper>
       </Grid>
 

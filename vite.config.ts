@@ -27,6 +27,11 @@ export default defineConfig({
         target: 'https://www.tefas.gov.tr',
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api\/tefas/, '')
+      },
+      '/api/swissquote': {
+        target: 'https://forex-data-feed.swissquote.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/swissquote/, '')
       }
     }
   },

@@ -42,9 +42,12 @@ export interface PriceData {
   price: number;
   change: number;
   changePercent: number;
+  previousClose?: number; // Önceki günün kapanış fiyatı
   lastUpdate: string;
   name?: string;
+  currency?: string; // Para birimi (örn. "TRY", "USD")
   historicalData?: HistoricalPrice[]; // Geçmiş veriyi de içerebilir
+  error?: string;
 }
 
 export interface PortfolioState {

@@ -40,10 +40,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
 
-  const totalValue = holdings.reduce((total, holding) => {
-    const priceData = prices[holding.symbol];
-    return total + (priceData ? priceData.price * holding.amount : 0);
-  }, 0);
+  const { totalValue, dailyChange } = holdings.reduce(
+    (acc, holding) => {
+      const priceData = prices[holding.symbol];
+      if (priceData) {
+        acc.totalValue += priceData.price * holding.amount;
+        acc.dailyChange += priceData.change * holding.amount;
+      } else {
+        // Fiyat henüz yüklenmediyse veya bulunamadıysa uyarı ver
+        // console.warn(`${holding.symbol} için fiyat bulunamadı!`);
+      }
+      return acc;
+    },
+    { totalValue: 0, dailyChange: 0 }
+  );
+
+  // Toplam portföyün dünkü değerini hesapla
+  const previousDayTotalValue = totalValue - dailyChange;
+  
+  // Yüzdesel değişimi toplam değere göre hesapla
+  const finalDailyChangePercent = previousDayTotalValue !== 0 
+    ? (dailyChange / previousDayTotalValue) * 100 
+    : 0;
+
 
   const handleAddHolding = (holding: Holding) => {
     dispatch(addHolding(holding));
@@ -82,6 +101,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
           {/* Portföy Özeti */}
           <PortfolioSummary
             totalValue={totalValue}
+            dailyChange={dailyChange}
+            dailyChangePercent={finalDailyChangePercent}
             holdingsCount={holdings.length}
             loading={loading}
             error={error}

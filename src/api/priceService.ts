@@ -2,6 +2,21 @@ import axios from 'axios';
 import type { PriceData, HistoricalPrice } from '../models/types';
 import { tefasService } from './tefasService';
 
+// Swissquote API'sinden gelen veri yapısı için tipler
+interface SwissquoteProfilePrice {
+  spreadProfile: string;
+  bid: number;
+  ask: number;
+}
+
+interface SwissquotePlatformData {
+  topo: {
+    platform: string;
+  };
+  spreadProfilePrices: SwissquoteProfilePrice[];
+}
+
+
 // Yahoo Finance Chart API response types
 interface YahooChartResponse {
   chart: {
@@ -19,11 +34,14 @@ interface YahooChartResponse {
       timestamp: number[];
       indicators: {
         quote: Array<{
-          close: number[];
-          open: number[];
-          high: number[];
-          low: number[];
-          volume: number[];
+          close: (number | null)[];
+          open: (number | null)[];
+          high: (number | null)[];
+          low: (number | null)[];
+          volume: (number | null)[];
+        }>;
+        adjclose?: Array<{
+          adjclose: (number | null)[];
         }>;
       };
     }>;
@@ -36,6 +54,10 @@ const isDevelopment = import.meta.env.DEV;
 const API_BASE_URL = isDevelopment 
   ? '/api/yahoo/v8/finance/chart' // Vite proxy üzerinden
   : 'https://query1.finance.yahoo.com/v8/finance/chart'; // Doğrudan (production için)
+
+const SWISSQUOTE_API_BASE_URL = isDevelopment
+  ? '/api/swissquote' // Geliştirme için Vite proxy
+  : 'https://forex-data-feed.swissquote.com'; // Üretim (Android dahil) için doğrudan API
 
 // CORS proxy servisi (geliştirme aşamasında kullanılabilir)
 // const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
@@ -127,10 +149,13 @@ export class PriceService {
 
         const historicalData: HistoricalPrice[] = [];
         for (let i = 0; i < timestamps.length; i++) {
-          if (prices[i] !== null && timestamps[i] !== null) {
+          const price = prices[i];
+          const timestamp = timestamps[i];
+
+          if (price !== null && timestamp !== null) {
             historicalData.push({
-              date: new Date(timestamps[i] * 1000).toISOString().split('T')[0],
-              price: prices[i],
+              date: new Date(timestamp * 1000).toISOString().split('T')[0],
+              price: price,
             });
           }
         }
@@ -160,35 +185,46 @@ export class PriceService {
     }
   }
 
-  public async fetchSinglePrice(symbol: string): Promise<PriceData | null> {
-    // TRY için özel durum: Fiyat her zaman 1
+  public async fetchSinglePrice(symbol: string): Promise<PriceData> {
     if (symbol === 'TRY') {
-      const priceData: PriceData = {
+      return {
         symbol: 'TRY',
         price: 1,
         change: 0,
         changePercent: 0,
+        previousClose: 1,
+        historicalData: [],
         lastUpdate: new Date().toISOString(),
-        name: 'Türk Lirası',
       };
-      this.cache.set(symbol, { data: priceData, timestamp: Date.now() });
-      return priceData;
     }
-    
-    // Önce TEFAS fon kodu olma ihtimalini kontrol et
-    if (/^[A-Z]{3}$/.test(symbol)) {
-      const fundPrice = await tefasService.fetchFundPrice(symbol);
-      if (fundPrice) {
-        // Fon fiyatı bulundu, cache'e ekle ve dön
-        this.cache.set(symbol, { data: fundPrice, timestamp: Date.now() });
-        return fundPrice;
+
+    // Gram Altın (GAU) için özel yönlendirme
+    if (symbol === 'GAU' || symbol === 'GAUTRY') {
+      return this.fetchGoldPrice(symbol);
+    }
+
+    if (symbol === 'XAUUSD' || symbol === 'XAUTRY') {
+      return this.fetchSwissquotePrice(symbol);
+    }
+
+    // TEFAS fon kodları genellikle 3 harflidir.
+    if (symbol.length === 3 && !['GAU', 'XAG'].includes(symbol)) {
+      try {
+        const fundPrice = await tefasService.fetchFundPrice(symbol);
+        if (fundPrice) {
+          // Fon fiyatı bulundu, cache'e ekle ve dön
+          this.cache.set(symbol, { data: fundPrice, timestamp: Date.now() });
+          return fundPrice;
+        }
+        // Eğer fon fiyatı bulunamazsa Yahoo Finance denemeye devam et
+      } catch (error) {
+        console.warn(`⚠️ Failed to fetch price for ${symbol} from TEFAS, trying Yahoo Finance.`);
       }
-      // Eğer fon fiyatı bulunamazsa Yahoo Finance denemeye devam et
     }
 
     // Altın için özel işlem: GC=F (ons altın USD) + USDTRY
     if (symbol === 'GAUTRY') {
-      return this.fetchGoldPrice();
+      return this.fetchGoldPrice(symbol);
     }
 
     const transformedSymbol = PriceService.transformSymbol(symbol);
@@ -205,84 +241,153 @@ export class PriceService {
     }
 
     console.warn('⚠️ Price not found for', symbol);
-    return null;
+    return {
+      symbol, // <- Sembol eklendi
+      price: 0,
+      change: 0,
+      changePercent: 0,
+      previousClose: 0,
+      historicalData: [],
+      lastUpdate: new Date().toISOString(),
+    };
   }
 
   // Altın için özel çevrim: GC=F (ons altın USD) -> Gram altın TRY
-  private async fetchGoldPrice(): Promise<PriceData | null> {
+  private async fetchGoldPrice(symbol: string): Promise<PriceData> {
     try {
       // 1 ons = 31.1035 gram
-      const GRAMS_PER_OUNCE = 31.1035;
-      
-      // Paralel olarak ons altın USD ve USD/TRY kurunu çek
-      const [goldResponse, usdtryResponse] = await Promise.all([
-        this.fetchYahooPrice('GC=F'), // Ons altın USD
-        this.fetchYahooPrice('USDTRY=X') // USD/TRY kuru
+      const OUNCE_TO_GRAM = 31.1035;
+
+      // Paralel olarak gerekli tüm verileri çek
+      const [
+        ounceUsdSwissquoteResponse,
+        ounceUsdYahooResponse,
+        usdTryResponse,
+      ] = await Promise.all([
+        this.fetchSwissquotePrice('XAUUSD'),
+        this.fetchYahooPrice('GC=F'), // Dünkü ons fiyatı için Yahoo'yu kullan
+        this.fetchSinglePrice('USDTRY'),
       ]);
 
-      if (!goldResponse || !usdtryResponse) {
-        console.error('❌ Altın veya USD/TRY fiyatı alınamadı');
-        return null;
+      // Gelen verilerin geçerliliğini kontrol et
+      if (!ounceUsdSwissquoteResponse || ounceUsdSwissquoteResponse.price === 0) {
+        throw new Error('Could not fetch current XAUUSD price from Swissquote');
+      }
+      if (!usdTryResponse || usdTryResponse.price === 0) {
+        throw new Error('Could not fetch USDTRY exchange rate');
+      }
+       if (!ounceUsdYahooResponse) {
+        throw new Error('Could not fetch historical XAUUSD price from Yahoo');
       }
 
-      // Güncel fiyat hesaplama
-      const ounceGoldUSD = goldResponse.price;
-      const usdTryRate = usdtryResponse.price;
-      const gramGoldTRY = (ounceGoldUSD / GRAMS_PER_OUNCE) * usdTryRate;
+      // ANLIK FİYAT HESAPLAMASI
+      const currentOuncePriceUSD = ounceUsdSwissquoteResponse.price;
+      const currentUsdTryRate = usdTryResponse.price;
+      const gramPriceTRY = (currentOuncePriceUSD * currentUsdTryRate) / OUNCE_TO_GRAM;
 
-      // Önceki kapanış için optimize edilmiş hesaplama
-      // goldResponse ve usdtryResponse'lar artık optimize edilmiş değişim verisi içeriyor
-      const prevOunceGoldUSD = goldResponse.price - goldResponse.change;
-      const prevUsdTryRate = usdtryResponse.price - usdtryResponse.change;
-      const prevGramGoldTRY = (prevOunceGoldUSD / GRAMS_PER_OUNCE) * prevUsdTryRate;
+      // DÜNKÜ FİYAT HESAPLAMASI
+      const previousOuncePriceUSD = ounceUsdYahooResponse.previousClose ?? ounceUsdYahooResponse.price;
+      const previousUsdTryRate = usdTryResponse.previousClose ?? usdTryResponse.price;
+      const previousGramPriceTRY = (previousOuncePriceUSD * previousUsdTryRate) / OUNCE_TO_GRAM;
+      
+      // DEĞİŞİM HESAPLAMASI
+      const change = gramPriceTRY - previousGramPriceTRY;
+      const changePercent = previousGramPriceTRY !== 0 ? (change / previousGramPriceTRY) * 100 : 0;
 
-      // TL cinsinden değişimi hesapla
-      const change = gramGoldTRY - prevGramGoldTRY;
-      let changePercent = prevGramGoldTRY !== 0 ? (change / prevGramGoldTRY) * 100 : 0;
-
-      // Aşırı yüksek değişim oranlarını sınırla (altın için de)
-      const MAX_GOLD_DAILY_CHANGE = 15; // Altın için %15 maksimum günlük değişim (daha muhafazakar)
-      if (Math.abs(changePercent) > MAX_GOLD_DAILY_CHANGE) {
-        console.warn(`⚠️ GAUTRY: Aşırı yüksek altın değişimi tespit edildi: ${changePercent.toFixed(2)}%. Sınırlanıyor.`);
-        changePercent = Math.sign(changePercent) * MAX_GOLD_DAILY_CHANGE;
-      }
-
-      // Debug: Gelişmiş altın hesaplama detayları
-      console.log('🥇 Altın Gelişmiş Hesaplama Detayları:', {
-        'Güncel Ons USD': ounceGoldUSD.toFixed(4),
-        'Güncel USD/TRY': usdTryRate.toFixed(4),
-        'Güncel Gram TRY': gramGoldTRY.toFixed(4),
-        'Önceki Ons USD': prevOunceGoldUSD.toFixed(4),
-        'Önceki USD/TRY': prevUsdTryRate.toFixed(4),
-        'Önceki Gram TRY': prevGramGoldTRY.toFixed(4),
-        'TL Değişim': change.toFixed(4),
-        'Original TL Değişim %': ((gramGoldTRY - prevGramGoldTRY) / prevGramGoldTRY * 100).toFixed(2) + '%',
-        'Final TL Değişim %': changePercent.toFixed(2) + '%',
-        'Altın Change %': goldResponse.changePercent.toFixed(2) + '%',
-        'USD/TRY Change %': usdtryResponse.changePercent.toFixed(2) + '%'
-      });
-
-      const priceData: PriceData = {
-        symbol: 'GAUTRY',
-        price: Number(gramGoldTRY.toFixed(4)),
-        change: Number(change.toFixed(4)),
-        changePercent: Number(changePercent.toFixed(2)),
-        lastUpdate: new Date().toISOString(),
+      const result: PriceData = {
+        symbol,
+        price: gramPriceTRY,
+        change: change,
+        changePercent: changePercent,
+        previousClose: previousGramPriceTRY,
+        historicalData: [],
         name: 'Gram Altın',
+        currency: 'TRY',
+        lastUpdate: new Date().toISOString(),
       };
-
-      // Cache'e kaydet
-      this.cache.set('GAUTRY', { data: priceData, timestamp: Date.now() });
-      return priceData;
-
+      return result;
     } catch (error) {
-      console.error('❌ Altın fiyatı hesaplama hatası:', error);
-      return null;
+      console.error(`Gram altın hesaplanırken HATA oluştu for ${symbol}:`, error);
+      // Hata durumunda boş veri dön
+      return {
+        symbol, // <- Sembol eklendi
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        previousClose: 0,
+        historicalData: [],
+        name: 'Gram Altın',
+        currency: 'TRY',
+        lastUpdate: new Date().toISOString(),
+      };
+    }
+  }
+
+  private async fetchSwissquotePrice(symbol: string): Promise<PriceData> {
+    // symbol XAUUSD veya XAUTRY formatında bekleniyor
+    const instrument = symbol.slice(0, 3);
+    const currency = symbol.slice(3);
+    const url = `${SWISSQUOTE_API_BASE_URL}/public-quotes/bboquotes/instrument/${instrument}/${currency}`;
+
+    try {
+      const response = await axios.get<SwissquotePlatformData[]>(url);
+      const data = response.data;
+
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        throw new Error('Invalid response structure from Swissquote API');
+      }
+
+      // 'SwissquoteLtd' platformunu ve 'elite' veya 'prime' profilini önceliklendir
+      const platform = data.find(p => p.topo?.platform === 'SwissquoteLtd') || data[0];
+      if (!platform || !platform.spreadProfilePrices || platform.spreadProfilePrices.length === 0) {
+        throw new Error('No price data found in Swissquote response');
+      }
+
+      const profile =
+        platform.spreadProfilePrices.find(p => p.spreadProfile === 'elite') ||
+        platform.spreadProfilePrices.find(p => p.spreadProfile === 'prime') ||
+        platform.spreadProfilePrices[0];
+      
+      if (!profile) {
+        throw new Error('No suitable price profile found in Swissquote response');
+      }
+
+      const price = (profile.bid + profile.ask) / 2;
+
+      // Bu API geçmiş veri sağlamadığı için değişim 0 olarak ayarlanır
+      const result: PriceData = {
+        symbol, // <- Sembol eklendi
+        price,
+        change: 0,
+        changePercent: 0,
+        previousClose: price,
+        historicalData: [],
+        name: symbol,
+        currency,
+        lastUpdate: new Date().toISOString(),
+      };
+      return result;
+    } catch (error) {
+      const errorMessage = `Could not fetch price for ${symbol} from Swissquote`;
+      console.error(errorMessage, error);
+      // Hata durumunda her zaman PriceData nesnesi döndür
+      return {
+        symbol,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        previousClose: 0,
+        historicalData: [],
+        name: symbol,
+        currency,
+        error: errorMessage,
+        lastUpdate: new Date().toISOString(),
+      };
     }
   }
 
   // Yahoo Finance'den tek bir sembol için fiyat çek (dahili kullanım)
-  private async fetchYahooPrice(symbol: string): Promise<PriceData | null> {
+  private async fetchYahooPrice(symbol: string): Promise<PriceData> {
     // Son 5 günlük veriyi çek - daha fazla data noktası için
     const url = `${API_BASE_URL}/${symbol}?range=5d&interval=1d&includePrePost=false`;
 
@@ -297,13 +402,22 @@ export class PriceService {
         const meta = result.meta;
         
         const indicators = result.indicators?.quote?.[0];
-        const closePrices = indicators?.close?.filter((price: number | null) => price != null) || [];
+        const adjCloseData = result.indicators?.adjclose?.[0];
+        const closePrices = indicators?.close?.filter((price): price is number => price != null) || [];
         
         const currentPrice = meta.regularMarketPrice;
 
         if (currentPrice == null) {
           console.warn(`⚠️ ${symbol}: regularMarketPrice is missing.`);
-          return null;
+          return {
+            symbol, // <- Sembol eklendi
+            price: 0,
+            change: 0,
+            changePercent: 0,
+            previousClose: 0,
+            historicalData: [],
+            lastUpdate: new Date().toISOString(),
+          };
         }
         
         // Önceki kapanış fiyatını belirlemek için en sağlam yöntem:
@@ -325,8 +439,29 @@ export class PriceService {
             previousClose = currentPrice;
         }
         
-        const change = currentPrice - previousClose;
-        let changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+        let change: number;
+        let changePercent: number;
+
+        // GMSTR için özel değişim hesaplaması (açılışa göre)
+        if (symbol === 'GMSTR.IS') {
+          const openPrices = indicators?.open?.filter((p): p is number => p !== null) || [];
+          const adjClosePrices = adjCloseData?.adjclose?.filter((p): p is number => p !== null) || [];
+
+          if (adjClosePrices.length > 0 && openPrices.length > 0) {
+            const priceToCompare = adjClosePrices[adjClosePrices.length - 1];
+            const baselinePrice = openPrices[openPrices.length - 1];
+            change = priceToCompare - baselinePrice;
+            changePercent = baselinePrice !== 0 ? (change / baselinePrice) * 100 : 0;
+          } else {
+            // Veri eksikse standart hesaplamaya dön
+            change = currentPrice - previousClose;
+            changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+          }
+        } else {
+          // Diğer tüm varlıklar için standart değişim hesaplaması (dünkü kapanışa göre)
+          change = currentPrice - previousClose;
+          changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+        }
         
         // Aşırı yüksek değişim oranlarını sınırla (veri hatası olabilir)
         const MAX_DAILY_CHANGE = 25; // %25 maksimum günlük değişim
@@ -353,6 +488,7 @@ export class PriceService {
           price: Number(currentPrice.toFixed(4)),
           change: Number(change.toFixed(4)),
           changePercent: Number(changePercent.toFixed(2)),
+          previousClose: previousClose, // <- previousClose eklendi
           lastUpdate: new Date().toISOString(),
           name: meta.shortName || meta.symbol,
         };
@@ -361,7 +497,15 @@ export class PriceService {
       console.error(`❌ Yahoo Finance error for ${symbol}:`, error);
     }
 
-    return null;
+    return {
+      symbol, // <- Sembol eklendi
+      price: 0,
+      change: 0,
+      changePercent: 0,
+      previousClose: 0,
+      historicalData: [],
+      lastUpdate: new Date().toISOString(),
+    };
   }
 
   // Türk varlıkları için sembol dönüşümü
