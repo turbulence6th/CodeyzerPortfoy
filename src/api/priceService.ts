@@ -96,6 +96,20 @@ export class PriceService {
   }
 
   private async fetchSinglePrice(symbol: string): Promise<PriceData | null> {
+    // TRY için özel durum: Fiyat her zaman 1
+    if (symbol === 'TRY') {
+      const priceData: PriceData = {
+        symbol: 'TRY',
+        price: 1,
+        change: 0,
+        changePercent: 0,
+        lastUpdate: new Date().toISOString(),
+        name: 'Türk Lirası',
+      };
+      this.cache.set(symbol, { data: priceData, timestamp: Date.now() });
+      return priceData;
+    }
+    
     // Önce TEFAS fon kodu olma ihtimalini kontrol et
     if (/^[A-Z]{3}$/.test(symbol)) {
       const fundPrice = await tefasService.fetchFundPrice(symbol);

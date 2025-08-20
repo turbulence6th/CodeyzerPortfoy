@@ -14,9 +14,11 @@ import {
   MdEdit as EditIcon,
   MdDelete as DeleteIcon,
   MdExpandMore as ExpandMoreIcon,
+  MdAssessment as AssessmentIcon,
 } from 'react-icons/md';
 import type { Holding, AssetType, PriceData, CategoryChart } from '../models/types';
 import { useSwipeable } from 'react-swipeable';
+import { StockAnalysisDialog } from './StockAnalysisDialog';
 
 interface HoldingsListProps {
   holdings: Holding[];
@@ -34,6 +36,18 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   onDeleteHolding
 }) => {
   const [expandedPanels, setExpandedPanels] = useState<string[]>(['CURRENCY', 'STOCK', 'FUND']);
+  const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false);
+  const [selectedStock, setSelectedStock] = useState<Holding | null>(null);
+
+  const handleOpenAnalysis = (holding: Holding) => {
+    setSelectedStock(holding);
+    setAnalysisDialogOpen(true);
+  };
+
+  const handleCloseAnalysis = () => {
+    setAnalysisDialogOpen(false);
+    setSelectedStock(null);
+  };
 
   const handlePanelChange = (panel: string) => {
     setExpandedPanels(prev => 
@@ -240,6 +254,11 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
             transition: 'transform .2s ease',
           }}
         >
+          {holding.type === 'STOCK' && (
+            <IconButton size="small" color="info" onClick={() => handleOpenAnalysis(holding)}>
+              <AssessmentIcon size={20} />
+            </IconButton>
+          )}
           <IconButton size="small" color="primary" onClick={() => { onEdit(holding); setSwiped(false); }}>
             <EditIcon size={20} />
           </IconButton>
@@ -329,6 +348,12 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
           );
         }).filter(Boolean)}
       </Box>
+
+      <StockAnalysisDialog
+        open={analysisDialogOpen}
+        onClose={handleCloseAnalysis}
+        symbol={selectedStock?.symbol ?? null}
+      />
     </Grid>
   );
 }; 

@@ -26,7 +26,7 @@ const assetTypes: { value: AssetType; label: string; examples: string }[] = [
 ];
 
 const symbolSuggestions: Record<AssetType, string[]> = {
-  CURRENCY: ['USDTRY', 'EURTRY', 'GAUTRY'],
+  CURRENCY: ['USDTRY', 'EURTRY', 'GAUTRY', 'TRY'],
   COMMODITY: [], // Kullanılmayacak ama tip uyumluluğu için
   STOCK: [
     'AEFES', 'AGHOL', 'AGROT', 'AHGAZ', 'AKBNK', 'AKSA', 'AKSEN', 'ALARK', 
@@ -128,13 +128,18 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
 
     const cleanSymbol = symbol.toUpperCase().trim();
 
-    // Sembol doğrulama
-    setValidating(true);
-    const isValidSymbol = await validateSymbol(cleanSymbol);
-    
-    if (!isValidSymbol) {
-      setError(`"${cleanSymbol}" sembolü bulunamadı veya fiyat bilgisi alınamıyor. Lütfen geçerli bir sembol giriniz.`);
-      return;
+    // "TRY" sembolü için özel durum
+    if (cleanSymbol !== 'TRY') {
+      // Sembol doğrulama
+      setValidating(true);
+      const isValidSymbol = await validateSymbol(cleanSymbol);
+      
+      if (!isValidSymbol) {
+        setError(`"${cleanSymbol}" sembolü bulunamadı veya fiyat bilgisi alınamıyor. Lütfen geçerli bir sembol giriniz.`);
+        setValidating(false); // validation bitti
+        return;
+      }
+      setValidating(false); // validation bitti
     }
 
     // Varlığı ekle

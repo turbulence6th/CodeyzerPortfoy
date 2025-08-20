@@ -74,8 +74,11 @@ export function usePrices(holdings: Holding[], autoRefresh = config.api.autoRefr
   }, [selectedService, holdings]);
 
   const refreshPrices = useCallback(async () => {
+    debugLog('🧹 Clearing cache and forcing refresh...');
+    selectedService.clearCache();
+    tefasService.clearCache();
     await fetchPrices();
-  }, [fetchPrices]);
+  }, [fetchPrices, selectedService]);
 
   // Initial fetch + dependency on memoized key
   useEffect(() => {

@@ -136,11 +136,11 @@ export class TefasService {
 
     // TEFAS API formatı: gün/ay/yıl
     const today = dayjs().format('DD.MM.YYYY');
-    const yesterday = dayjs().subtract(1, 'day').format('DD.MM.YYYY');
+    const weekAgo = dayjs().subtract(7, 'days').format('DD.MM.YYYY'); // 1 haftalık sorgu
 
     const formData = new URLSearchParams();
     formData.append('fontip', 'YAT'); // Yatırım fonları
-    formData.append('bastarih', yesterday);
+    formData.append('bastarih', weekAgo);
     formData.append('bittarih', today);
     formData.append('fonkod', fundCode);
 
@@ -164,7 +164,15 @@ export class TefasService {
       // Array tarihe göre yeni->eski sıralı (TARIH timestamp'i büyük olan en yeni)
       // En yeni veriyi al
       items.sort((a: any, b: any) => parseInt(b.TARIH) - parseInt(a.TARIH));
-      const latest = items[0];
+      
+      // Son günün fiyatı 0'sa bir önceki günü bul
+      let latest = items[0];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].FIYAT > 0) {
+          latest = items[i];
+          break; // Fiyatı 0'dan büyük ilk veriyi al
+        }
+      }
       
       console.log(`📊 TEFAS ${fundCode} Debug:`, {
         tarih: new Date(parseInt(latest.TARIH)).toLocaleDateString('tr-TR'),
@@ -183,11 +191,19 @@ export class TefasService {
       let changePercent = 0;
 
       if (items.length >= 2) {
-        const prev = items[1]; // İkinci element önceki gün
-        const prevPrice = prev.FIYAT;
-        if (typeof prevPrice === 'number' && !isNaN(prevPrice) && prevPrice !== 0) {
-          change = price - prevPrice;
-          changePercent = (change / prevPrice) * 100;
+        // Değişim hesaplaması için, geçerli fiyattan bir önceki fiyatı bul
+        const currentIndex = items.findIndex(item => item.TARIH === latest.TARIH);
+        let prevItem = null;
+        if (currentIndex !== -1 && currentIndex + 1 < items.length) {
+            prevItem = items[currentIndex + 1];
+        }
+
+        if (prevItem) {
+          const prevPrice = prevItem.FIYAT;
+          if (typeof prevPrice === 'number' && !isNaN(prevPrice) && prevPrice > 0) {
+            change = price - prevPrice;
+            changePercent = (change / prevPrice) * 100;
+          }
         }
       }
 
