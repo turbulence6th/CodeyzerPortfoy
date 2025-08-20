@@ -7,6 +7,9 @@ interface PortfolioState {
   prices: Record<string, PriceData>;
   loading: boolean;
   error: string | null;
+  /** Hangi sembollerin fiyatının güncellendiğini takip eder */
+  updatingSymbols: string[];
+  lastUpdate: string | null;
 }
 
 const initialState: PortfolioState = {
@@ -14,6 +17,8 @@ const initialState: PortfolioState = {
   prices: {},
   loading: false,
   error: null,
+  updatingSymbols: [],
+  lastUpdate: null,
 };
 
 const portfolioSlice = createSlice({
@@ -37,19 +42,40 @@ const portfolioSlice = createSlice({
     
     removeHolding: (state, action: PayloadAction<string>) => {
       state.holdings = state.holdings.filter(h => h.id !== action.payload);
-      // Not: Kategorilerden silme işlemi middleware veya listener ile yapılacak
+      // Fiyat verisini de temizle
+      const holdingToRemove = state.holdings.find(h => h.id === action.payload);
+      if (holdingToRemove) {
+        delete state.prices[holdingToRemove.symbol];
+      }
     },
-    
-    setLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
+
+    // Fiyatları çekmeye başla
+    fetchPricesStart: (state, action: PayloadAction<string[]>) => {
+      state.loading = true;
+      state.error = null;
+      state.updatingSymbols = action.payload;
     },
-    
-    setError: (state, action: PayloadAction<string | null>) => {
+
+    // Fiyatları çekme işlemi bitti
+    fetchPricesSuccess: (state) => {
+      state.loading = false;
+      state.updatingSymbols = [];
+      state.lastUpdate = new Date().toISOString();
+    },
+
+    // Fiyat çekme hatası
+    fetchPricesError: (state, action: PayloadAction<string>) => {
+      state.loading = false;
       state.error = action.payload;
+      state.updatingSymbols = [];
     },
     
-    updatePrices: (state, action: PayloadAction<Record<string, PriceData>>) => {
-      state.prices = action.payload;
+    // Tek bir varlığın fiyatını güncelle
+    updatePriceData: (state, action: PayloadAction<PriceData>) => {
+      const priceData = action.payload;
+      state.prices[priceData.symbol] = priceData;
+      // Güncellenen sembolü listeden çıkar
+      state.updatingSymbols = state.updatingSymbols.filter(s => s !== priceData.symbol);
     },
     
     clearError: (state) => {
@@ -62,9 +88,10 @@ export const {
   addHolding,
   updateHolding,
   removeHolding,
-  setLoading,
-  setError,
-  updatePrices,
+  fetchPricesStart,
+  fetchPricesSuccess,
+  fetchPricesError,
+  updatePriceData,
   clearError,
 } = portfolioSlice.actions;
 

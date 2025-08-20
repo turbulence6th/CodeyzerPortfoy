@@ -1,12 +1,16 @@
 import React from 'react';
 import { Grid, Paper, Typography } from '@mui/material';
+import dayjs from 'dayjs';
+import 'dayjs/locale/tr';
+
+dayjs.locale('tr');
 
 interface PortfolioSummaryProps {
   totalValue: number;
   holdingsCount: number;
   loading: boolean;
   error: string | null;
-  lastUpdate: Date | null;
+  lastUpdate: string | null; // Artık string | null
 }
 
 export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
@@ -17,13 +21,7 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
   lastUpdate
 }) => {
   const lastUpdateFormatted = lastUpdate 
-    ? lastUpdate.toLocaleString('tr-TR', {
-        day: '2-digit',
-        month: '2-digit', 
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+    ? dayjs(lastUpdate).format('DD MMMM YYYY, HH:mm')
     : 'Henüz güncellenmedi';
 
   return (

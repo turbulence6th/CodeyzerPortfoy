@@ -4,17 +4,17 @@ import { Dashboard } from './pages/Dashboard';
 import { CategoryCharts } from './pages/CategoryCharts';
 import { useAppSelector } from './hooks/redux';
 import { usePrices } from './hooks/usePrices';
-import { config } from './utils/config';
 
 function App() {
   const holdings = useAppSelector(state => state.portfolio.holdings);
-  const { refreshPrices, loading } = usePrices(holdings, config.api.autoRefreshPrices);
+  
+  const { refreshPrices } = usePrices(holdings);
 
   return (
     <Router>
-      <Layout onRefreshPrices={refreshPrices} isLoading={loading}>
+      <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard onRefresh={refreshPrices} />} />
           <Route path="/category-charts" element={<CategoryCharts />} />
         </Routes>
       </Layout>

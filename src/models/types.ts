@@ -49,10 +49,12 @@ export interface PriceData {
 
 export interface PortfolioState {
   holdings: Holding[];
+  prices: Record<string, PriceData>;
   totalValue: number;
-  lastPriceUpdate: string | null;
+  lastUpdate: string | null; // ISO 8601 formatında tarih
   loading: boolean;
   error: string | null;
+  /** Hangi sembollerin fiyatının güncellendiğini takip eder */
 }
 
 export interface PortfolioSummary {

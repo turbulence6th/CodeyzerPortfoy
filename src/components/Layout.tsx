@@ -5,7 +5,6 @@ import {
   Typography,
   IconButton,
   Box,
-  Button,
   Container,
   BottomNavigation,
   BottomNavigationAction,
@@ -14,30 +13,21 @@ import {
 import {
   MdBrightness4 as Brightness4,
   MdBrightness7 as Brightness7,
-  MdRefresh as Refresh,
   MdAccountBalance as AccountBalance,
   MdDashboard as Dashboard,
   MdBarChart as BarChart,
 } from 'react-icons/md';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
-import { useTheme as useMuiTheme } from '@mui/material/styles';
-import useMediaQuery from '@mui/material/useMediaQuery';
 
 interface LayoutProps {
   children: React.ReactNode;
-  onRefreshPrices?: () => void;
-  isLoading?: boolean;
 }
 
 export const Layout: React.FC<LayoutProps> = ({ 
   children, 
-  onRefreshPrices,
-  isLoading = false 
 }) => {
   const { isDarkMode, toggleTheme } = useTheme();
-  const muiTheme = useMuiTheme();
-  const isSmall = useMediaQuery(muiTheme.breakpoints.down('sm'));
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -74,16 +64,6 @@ export const Layout: React.FC<LayoutProps> = ({
             Codeyzer Portföy
           </Typography>
           
-          <Button
-            color="inherit"
-            onClick={onRefreshPrices}
-            disabled={isLoading}
-            startIcon={<Refresh />}
-            sx={{ mr: 1 }}
-          >
-            {!isSmall && (isLoading ? 'Güncelleniyor...' : 'Fiyatları Güncelle')}
-          </Button>
-
           <IconButton
             color="inherit"
             onClick={toggleTheme}

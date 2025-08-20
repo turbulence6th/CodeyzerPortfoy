@@ -160,7 +160,7 @@ export class PriceService {
     }
   }
 
-  private async fetchSinglePrice(symbol: string): Promise<PriceData | null> {
+  public async fetchSinglePrice(symbol: string): Promise<PriceData | null> {
     // TRY için özel durum: Fiyat her zaman 1
     if (symbol === 'TRY') {
       const priceData: PriceData = {

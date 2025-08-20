@@ -11,11 +11,12 @@ import { DeleteCategoryChartDialog } from '../components/DeleteCategoryChartDial
 import type { CategoryChart as CategoryChartType } from '../models/types';
 
 export const CategoryCharts: React.FC = () => {
-  const holdings = useAppSelector((state) => state.portfolio.holdings);
+  const { holdings, prices } = useAppSelector((state) => state.portfolio);
   const charts = useAppSelector((state) => state.category.charts);
   const dispatch = useAppDispatch();
 
-  const { prices } = usePrices(holdings);
+  // Fiyatları çekmek için hook'u çağır, ancak dönüş değerine ihtiyacımız yok
+  usePrices(holdings);
 
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false);
