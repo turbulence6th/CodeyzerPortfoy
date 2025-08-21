@@ -1,34 +1,26 @@
-import type { PriceData } from '../models/types';
+import type { PriceData, HistoricalPrice } from '../models/types';
+import { PriceService } from './priceService'; // Gerçek servisten transformSymbol'u almak için
+
+// Hata döndürmesi istenen sembol
+const ERROR_SYMBOL = 'EURTRY';
 
 // Mock fiyat verileri (development için)
 const mockPrices: Record<string, PriceData> = {
-  'USDTRY=X': {
-    symbol: 'USDTRY=X',
+  'USDTRY': {
+    symbol: 'USDTRY',
     price: 34.25,
     change: 0.15,
     changePercent: 0.44,
     lastUpdate: new Date().toISOString(),
+    name: 'Dolar / Türk Lirası',
   },
-  'EURTRY=X': {
-    symbol: 'EURTRY=X',
-    price: 37.80,
-    change: -0.25,
-    changePercent: -0.66,
-    lastUpdate: new Date().toISOString(),
-  },
-  'GAUTRY=X': {
-    symbol: 'GAUTRY=X',
+  'GAUTRY': {
+    symbol: 'GAUTRY',
     price: 2650.50,
     change: 12.30,
     changePercent: 0.47,
     lastUpdate: new Date().toISOString(),
-  },
-  'XAGTRY=X': {
-    symbol: 'XAGTRY=X',
-    price: 31.85,
-    change: -0.42,
-    changePercent: -1.30,
-    lastUpdate: new Date().toISOString(),
+    name: 'Gram Altın',
   },
   'ISCTR.IS': {
     symbol: 'ISCTR.IS',
@@ -36,6 +28,7 @@ const mockPrices: Record<string, PriceData> = {
     change: 0.05,
     changePercent: 2.78,
     lastUpdate: new Date().toISOString(),
+    name: 'İş Bankası C',
   },
   'THYAO.IS': {
     symbol: 'THYAO.IS',
@@ -43,13 +36,20 @@ const mockPrices: Record<string, PriceData> = {
     change: -3.25,
     changePercent: -1.13,
     lastUpdate: new Date().toISOString(),
+    name: 'Türk Hava Yolları',
+  },
+  'TCELL.IS': {
+    symbol: 'TCELL.IS',
+    price: 95.70,
+    change: 1.20,
+    changePercent: 1.27,
+    lastUpdate: new Date().toISOString(),
+    name: 'Turkcell',
   },
 };
 
 export class MockPriceService {
   private static instance: MockPriceService;
-  private cache: Map<string, { data: PriceData; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 60000; // 1 dakika
 
   static getInstance(): MockPriceService {
     if (!MockPriceService.instance) {
@@ -57,96 +57,81 @@ export class MockPriceService {
     }
     return MockPriceService.instance;
   }
-
-  private isCacheValid(timestamp: number): boolean {
-    return Date.now() - timestamp < this.CACHE_DURATION;
-  }
-
-  async fetchPrices(symbols: string[]): Promise<Record<string, PriceData>> {
-    console.log('🔄 Mock API: Fetching prices for:', symbols);
+  
+  // Tek bir fiyatı mock olarak getir
+  async fetchSinglePrice(symbol: string): Promise<PriceData> {
+    console.log(`🔄 Mock API: Fetching single price for: ${symbol}`);
     
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // API gecikmesini simüle et
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 200));
 
-    const prices: Record<string, PriceData> = {};
+    // Hata sembolünü kontrol et
+    if (symbol === ERROR_SYMBOL) {
+      console.error(`❌ Mock API: Simulating error for ${symbol}`);
+      return {
+        symbol,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        lastUpdate: new Date().toISOString(),
+        error: `Mock hata: ${symbol} fiyatı alınamadı.`,
+      };
+    }
+    
+    // Sembolü Yahoo Finance formatına dönüştür (varsa)
+    const transformedSymbol = PriceService.transformSymbol(symbol);
+    const priceData = mockPrices[transformedSymbol] ?? mockPrices[symbol];
 
-    for (const symbol of symbols) {
-      // Check cache first
-      const cached = this.cache.get(symbol);
-      if (cached && this.isCacheValid(cached.timestamp)) {
-        prices[symbol] = cached.data;
-        continue;
-      }
+    if (priceData) {
+      // Gerçek zamanlı gibi görünmesi için küçük bir değişiklik ekle
+      const variation = (Math.random() - 0.5) * 0.02; // ±%1
+      const newPrice = priceData.price * (1 + variation);
+      const change = newPrice - (priceData.previousClose ?? priceData.price);
 
-      // Get mock data or generate random data
-      const basePrice = mockPrices[symbol];
-      if (basePrice) {
-        // Add some random variation to simulate real data
-        const variation = (Math.random() - 0.5) * 0.02; // ±1% variation
-        const newPrice = basePrice.price * (1 + variation);
-        const change = newPrice - basePrice.price;
-        const changePercent = (change / basePrice.price) * 100;
-
-        const priceData: PriceData = {
-          symbol: symbol,
-          price: Number(newPrice.toFixed(2)),
-          change: Number(change.toFixed(2)),
-          changePercent: Number(changePercent.toFixed(2)),
-          lastUpdate: new Date().toISOString(),
-        };
-
-        prices[symbol] = priceData;
-        
-        // Cache the data
-        this.cache.set(symbol, {
-          data: priceData,
-          timestamp: Date.now(),
-        });
-      } else {
-        // Generate random data for unknown symbols
-        const randomPrice = Math.random() * 100 + 10;
-        const randomChange = (Math.random() - 0.5) * 4;
-        const randomChangePercent = (randomChange / randomPrice) * 100;
-
-        const priceData: PriceData = {
-          symbol: symbol,
-          price: Number(randomPrice.toFixed(2)),
-          change: Number(randomChange.toFixed(2)),
-          changePercent: Number(randomChangePercent.toFixed(2)),
-          lastUpdate: new Date().toISOString(),
-        };
-
-        prices[symbol] = priceData;
-        
-        this.cache.set(symbol, {
-          data: priceData,
-          timestamp: Date.now(),
-        });
-      }
+      return {
+        ...priceData,
+        price: Number(newPrice.toFixed(4)),
+        change: Number(change.toFixed(4)),
+        changePercent: Number(((change / (priceData.previousClose ?? priceData.price)) * 100).toFixed(2)),
+        lastUpdate: new Date().toISOString(),
+      };
     }
 
-    console.log('✅ Mock API: Prices fetched successfully:', Object.keys(prices));
-    return prices;
-  }
-
-  // Same symbol transformation as real service
-  static transformSymbol(symbol: string): string {
-    const symbolMap: Record<string, string> = {
-      'USDTRY': 'USDTRY=X',
-      'EURTRY': 'EURTRY=X', 
-      'GAUTRY': 'GAUTRY=X',
-      'XAGTRY': 'XAGTRY=X',
+    // Bilinmeyen semboller için rastgele veri üret
+    console.warn(`⚠️ Mock API: No mock data for ${symbol}. Generating random data.`);
+    const randomPrice = Math.random() * 3000;
+    const randomChange = (Math.random() - 0.5) * 100;
+    return {
+      symbol,
+      price: Number(randomPrice.toFixed(4)),
+      change: Number(randomChange.toFixed(4)),
+      changePercent: Number(((randomChange / randomPrice) * 100).toFixed(2)),
+      lastUpdate: new Date().toISOString(),
+      name: `${symbol} (Mocked)`,
     };
-
-    return symbolMap[symbol] || symbol;
+  }
+  
+  // Historical data için mock
+  async fetchHistoricalPrices(symbol: string): Promise<HistoricalPrice[]> {
+    console.log(`📈 Mock API: Fetching historical data for: ${symbol}`);
+    const data: HistoricalPrice[] = [];
+    let price = Math.random() * 1000;
+    for (let i = 30; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      price *= 1 + (Math.random() - 0.5) * 0.1;
+      data.push({
+        date: date.toISOString().split('T')[0],
+        price: Number(price.toFixed(4)),
+      });
+    }
+    return data;
   }
 
-  static getBISTSymbol(code: string): string {
-    return `${code}.IS`;
-  }
 
   clearCache(): void {
-    this.cache.clear();
+    // Mock serviste cache yok, ama arayüzle uyumlu olması için metod duruyor.
+    console.log('🗑️ Mock Price Service: Cache clear called (no-op).');
   }
 }
 

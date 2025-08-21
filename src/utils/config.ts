@@ -1,5 +1,9 @@
 const isDevelopment = import.meta.env.DEV;
 
+// Geliştirme sırasında mock API'yi kullanmak için bu değeri true yapın.
+// Production build'larda bu değer otomatik olarak `false` olmalıdır.
+export const USE_MOCK_API = false; 
+
 // Environment configuration
 export const config = {
   api: {

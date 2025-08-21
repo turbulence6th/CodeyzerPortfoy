@@ -242,13 +242,14 @@ export class PriceService {
 
     console.warn('⚠️ Price not found for', symbol);
     return {
-      symbol, // <- Sembol eklendi
+      symbol,
       price: 0,
       change: 0,
       changePercent: 0,
       previousClose: 0,
       historicalData: [],
       lastUpdate: new Date().toISOString(),
+      error: 'Fiyat bulunamadı', // Hata mesajı eklendi
     };
   }
 
@@ -310,7 +311,7 @@ export class PriceService {
       console.error(`Gram altın hesaplanırken HATA oluştu for ${symbol}:`, error);
       // Hata durumunda boş veri dön
       return {
-        symbol, // <- Sembol eklendi
+        symbol,
         price: 0,
         change: 0,
         changePercent: 0,
@@ -319,6 +320,7 @@ export class PriceService {
         name: 'Gram Altın',
         currency: 'TRY',
         lastUpdate: new Date().toISOString(),
+        error: 'Altın fiyatı hesaplanamadı', // Hata mesajı eklendi
       };
     }
   }
@@ -410,13 +412,14 @@ export class PriceService {
         if (currentPrice == null) {
           console.warn(`⚠️ ${symbol}: regularMarketPrice is missing.`);
           return {
-            symbol, // <- Sembol eklendi
+            symbol,
             price: 0,
             change: 0,
             changePercent: 0,
             previousClose: 0,
             historicalData: [],
             lastUpdate: new Date().toISOString(),
+            error: 'Fiyat verisi eksik', // Hata mesajı eklendi
           };
         }
         
@@ -494,7 +497,18 @@ export class PriceService {
         };
       }
     } catch (error) {
+      const errorMessage = `Fiyat alınamadı (${symbol})`;
       console.error(`❌ Yahoo Finance error for ${symbol}:`, error);
+      return { // Hata durumunda her zaman PriceData nesnesi ve hata mesajı döndür
+        symbol,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        previousClose: 0,
+        historicalData: [],
+        lastUpdate: new Date().toISOString(),
+        error: errorMessage,
+      };
     }
 
     return {
@@ -505,6 +519,7 @@ export class PriceService {
       previousClose: 0,
       historicalData: [],
       lastUpdate: new Date().toISOString(),
+      error: 'Bilinmeyen bir hata oluştu', // Hata mesajı eklendi
     };
   }
 
@@ -542,4 +557,17 @@ export class PriceService {
   }
 }
 
-export const priceService = PriceService.getInstance(); 
+// Gerçek servis örneği
+const realPriceService = PriceService.getInstance();
+
+// Mock servis importu
+import { MockPriceService } from './mockPriceService';
+import { USE_MOCK_API } from '../utils/config';
+
+// Hangi servisin kullanılacağını belirle
+const priceServiceToUse = USE_MOCK_API 
+  ? MockPriceService.getInstance() 
+  : realPriceService;
+
+// Seçilen servisi export et
+export const priceService = priceServiceToUse as unknown as PriceService; 

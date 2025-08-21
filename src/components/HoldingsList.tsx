@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Grid, Paper, Typography, Box, IconButton, Accordion,
   AccordionSummary, AccordionDetails, Chip, Skeleton, Menu,
-  MenuItem, ListItemIcon, ListItemText
+  MenuItem, ListItemIcon, ListItemText, Tooltip
 } from '@mui/material';
 import {
   MdEdit as EditIcon,
@@ -10,6 +10,7 @@ import {
   MdExpandMore as ExpandMoreIcon,
   MdAssessment as AssessmentIcon,
   MdMoreVert as MoreVertIcon,
+  MdErrorOutline as ErrorOutlineIcon,
 } from 'react-icons/md';
 import type { Holding, AssetType, PriceData, CategoryChart } from '../models/types';
 import { StockAnalysisDialog } from './StockAnalysisDialog';
@@ -203,7 +204,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
             )}
             <Typography variant="body2" color="text.secondary">
               {amount} adet
-              {priceData && (
+              {priceData && !priceData.error && (
                 <> • ₺{priceData.price.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} birim fiyat</>
               )}
             </Typography>
@@ -236,6 +237,15 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
                 <Skeleton variant="text" width={80} sx={{ mb: 0.5 }} />
                 <Skeleton variant="text" width={50} />
               </>
+            ) : priceData?.error ? (
+                <Tooltip title={priceData.error} arrow>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.5, color: 'error.main' }}>
+                    <ErrorOutlineIcon size="1rem" />
+                    <Typography variant="subtitle1" color="error" fontWeight="medium">
+                      Hata
+                    </Typography>
+                  </Box>
+                </Tooltip>
             ) : (
               <>
                 <Typography variant="subtitle1" fontWeight="medium">
