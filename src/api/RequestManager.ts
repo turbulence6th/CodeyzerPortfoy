@@ -25,7 +25,7 @@ interface Request<T> {
  */
 export class RequestManager<T> {
   private queue: Request<T>[] = [];
-  private activeRequests = 0;
+  private activeRequests: Set<string> = new Set(); // Aktif istekleri ID ile takip et
   private concurrencyLimit: number;
   private onProgress: ProgressCallback<T>;
 
@@ -45,8 +45,8 @@ export class RequestManager<T> {
    * @param {string} id A unique identifier for the request to avoid duplicates.
    */
   public add(fn: RequestFunction<T>, id: string): void {
-    if (this.queue.some(req => req.id === id)) {
-      // Avoid adding duplicate requests
+    // İstek zaten aktifse veya kuyruktaysa ekleme
+    if (this.activeRequests.has(id) || this.queue.some(req => req.id === id)) {
       return;
     }
     this.queue.push({ fn, id });
@@ -59,13 +59,12 @@ export class RequestManager<T> {
   public async start(): Promise<void> {
     return new Promise(resolve => {
       const run = () => {
-        while (this.activeRequests < this.concurrencyLimit && this.queue.length > 0) {
-          this.activeRequests++;
+        while (this.activeRequests.size < this.concurrencyLimit && this.queue.length > 0) {
           const request = this.queue.shift();
           if (request) {
+            this.activeRequests.add(request.id); // İsteği aktif olarak işaretle
             request.fn()
               .then(result => {
-                // Only call progress callback if the result is not null/undefined
                 if (result) {
                   this.onProgress(result);
                 }
@@ -74,18 +73,24 @@ export class RequestManager<T> {
                 console.warn(`Request failed for ID ${request.id}:`, error);
               })
               .finally(() => {
-                this.activeRequests--;
-                // Check if queue is done
-                if (this.queue.length === 0 && this.activeRequests === 0) {
+                this.activeRequests.delete(request.id); // İsteği aktif listesinden çıkar
+                
+                if (this.queue.length === 0 && this.activeRequests.size === 0) {
                   resolve();
                 } else {
-                  // Run next request
                   run();
                 }
               });
           }
         }
       };
+
+      // Kuyruk boşsa ve aktif istek yoksa hemen çöz
+      if (this.queue.length === 0 && this.activeRequests.size === 0) {
+        resolve();
+        return;
+      }
+      
       run();
     });
   }

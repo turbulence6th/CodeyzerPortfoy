@@ -231,7 +231,7 @@ export class PriceService {
 
     // Yahoo Finance üzerinden al
     const yahooData = await this.fetchYahooPrice(transformedSymbol);
-    if (yahooData) {
+    if (yahooData && !yahooData.error) {
       // fetchYahooPrice dönüşünde sembol değişmiş olabilir; orijinal sembolü geri yaz
       const priceData: PriceData = { ...yahooData, symbol };
 
@@ -240,6 +240,12 @@ export class PriceService {
       return priceData;
     }
 
+    // Eğer yahooData bir hata nesnesi içeriyorsa, onu doğrudan dön
+    if (yahooData?.error) {
+      return { ...yahooData, symbol };
+    }
+
+    // Diğer tüm durumlarda genel bir hata mesajı dön
     console.warn('⚠️ Price not found for', symbol);
     return {
       symbol,
@@ -496,6 +502,21 @@ export class PriceService {
           name: meta.shortName || meta.symbol,
         };
       }
+
+      // Eğer API'den geçerli bir sonuç gelmezse, hata olarak işaretle
+      const errorMessage = `Geçersiz API yanıtı (${symbol})`;
+      console.warn(`⚠️ ${errorMessage}`);
+      return {
+        symbol,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        previousClose: 0,
+        historicalData: [],
+        lastUpdate: new Date().toISOString(),
+        error: errorMessage,
+      };
+
     } catch (error) {
       const errorMessage = `Fiyat alınamadı (${symbol})`;
       console.error(`❌ Yahoo Finance error for ${symbol}:`, error);
@@ -510,17 +531,6 @@ export class PriceService {
         error: errorMessage,
       };
     }
-
-    return {
-      symbol, // <- Sembol eklendi
-      price: 0,
-      change: 0,
-      changePercent: 0,
-      previousClose: 0,
-      historicalData: [],
-      lastUpdate: new Date().toISOString(),
-      error: 'Bilinmeyen bir hata oluştu', // Hata mesajı eklendi
-    };
   }
 
   // Türk varlıkları için sembol dönüşümü
