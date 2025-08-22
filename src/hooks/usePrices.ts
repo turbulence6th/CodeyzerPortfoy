@@ -1,12 +1,13 @@
-import { useEffect, useCallback } from 'react';
-import { priceService } from '../api/priceService';
+import { useEffect, useCallback, useRef } from 'react';
+import { priceService, PriceService } from '../api/priceService'; // PriceService sınıfını da import et
 import { RequestManager } from '../api/RequestManager';
-import { useAppDispatch } from './redux';
+import { useAppDispatch, useAppSelector } from './redux';
 import {
   fetchPricesStart,
   fetchPricesSuccess,
   fetchPricesError,
   updatePriceData,
+  setPriceCacheItem,
 } from '../store/portfolioSlice';
 import type { Holding, PriceData } from '../models/types';
 
@@ -14,68 +15,96 @@ interface UsePricesReturn {
   refreshPrices: () => void;
 }
 
-/**
- * Portföydeki varlıkların fiyatlarını akıllı bir sıra yönetimi
- * ile çeken ve Redux state'ini aşamalı olarak güncelleyen hook.
- * @param holdings Fiyatları çekilecek varlıkların listesi.
- */
 export function usePrices(holdings: Holding[]): UsePricesReturn {
   const dispatch = useAppDispatch();
+  const priceCache = useAppSelector((state) => state.portfolio.priceCache);
+  const priceCacheRef = useRef(priceCache);
+  priceCacheRef.current = priceCache;
 
   const fetchPrices = useCallback(async (isRefresh = false) => {
-    if (holdings.length === 0) {
-      return;
-    }
+    if (holdings.length === 0) return;
 
     const uniqueSymbols = [...new Set(holdings.map(h => h.symbol))];
-
-    // Fiyat çekme işlemini başlat
     dispatch(fetchPricesStart(uniqueSymbols));
 
-    if (isRefresh) {
-      priceService.clearCache();
-    }
-
-    // Her bir fiyat geldiğinde Redux'ı güncelle
     const onPriceUpdate = (priceData: PriceData | null) => {
-      if (priceData) { // Sadece null değilse Redux'a gönder
+      if (priceData) {
         dispatch(updatePriceData(priceData));
+        if (priceData.price !== 0 && !priceData.error) {
+          dispatch(setPriceCacheItem({
+            symbol: priceData.symbol,
+            item: { data: priceData, timestamp: Date.now() }
+          }));
+        }
       }
     };
 
-    // Fonlar ve diğerleri için ayrı istek yöneticileri
-    // TEFAS çok hassas olduğu için tek tek (concurrency: 1)
     const tefasManager = new RequestManager<PriceData | null>(1, onPriceUpdate);
-    
-    // Yahoo daha toleranslı, 4'lü gruplar halinde
     const yahooManager = new RequestManager<PriceData | null>(4, onPriceUpdate);
 
-    holdings.forEach(holding => {
-      // Fonksiyonu bir closure içine alarak `holding.symbol` değerini koru
-      const requestFn = () => priceService.fetchSinglePrice(holding.symbol);
-      
-      if (holding.type === 'FUND') {
-        tefasManager.add(requestFn, holding.symbol);
-      } else {
-        yahooManager.add(requestFn, holding.symbol);
-      }
-    });
+    // GAUTRY'yi ve bağımlılığı olan USDTRY'yi ayır
+    const gautrySymbols = uniqueSymbols.filter(s => s === 'GAU' || s === 'GAUTRY');
+    let otherSymbols = uniqueSymbols.filter(s => s !== 'GAU' && s !== 'GAUTRY');
 
+    // GAUTRY varsa, bağımlılığı olan USDTRY'nin de ilk pass'ta istendiğinden emin ol
+    if (gautrySymbols.length > 0 && !otherSymbols.includes('USDTRY')) {
+      otherSymbols.push('USDTRY');
+    }
+
+    // --- 1. Aşama: GAUTRY dışındaki tüm varlıkları çek ---
+    for (const symbol of otherSymbols) {
+      const type = PriceService.getAssetTypeFromSymbol(symbol);
+      const cachedItem = priceCacheRef.current[symbol];
+      
+      let useCache = false;
+      if (cachedItem) {
+        if (!isRefresh && (type === 'CURRENCY' || type === 'COMMODITY')) {
+          useCache = false;
+        } else {
+          useCache = priceService.isCacheValid(symbol, cachedItem.timestamp, isRefresh);
+        }
+      }
+ 
+      if (useCache) {
+        dispatch(updatePriceData({ ...cachedItem.data, source: 'cache' }));
+      } else {
+        const requestFn = () => priceService.fetchSinglePrice(symbol, isRefresh);
+        if (type === 'FUND') {
+          tefasManager.add(requestFn, symbol);
+        } else {
+          yahooManager.add(requestFn, symbol);
+        }
+      }
+    }
+ 
     try {
-      // Her iki yöneticiyi de paralel olarak başlat
-      await Promise.all([
-        tefasManager.start(),
-        yahooManager.start()
-      ]);
+      // Önce bağımlılıkların (USDTRY dahil) tamamlanmasını bekle
+      await Promise.all([tefasManager.start(), yahooManager.start()]);
+ 
+      // --- 2. Aşama: GAUTRY'yi güncel USDTRY ile hesapla ---
+      if (gautrySymbols.length > 0) {
+        const usdTryCache = priceCacheRef.current['USDTRY']; // Cache şimdi güncel
+        if (!usdTryCache) {
+          console.error("GAUTRY hesaplaması için USDTRY bulunamadı!");
+          throw new Error("USDTRY verisi alınamadı.");
+        }
+ 
+        for (const symbol of gautrySymbols) {
+          const priceData = await priceService.fetchSinglePrice(symbol, isRefresh, { 
+            usdTryPrice: usdTryCache.data 
+          });
+          onPriceUpdate(priceData); // Sonucu işle
+        }
+      }
+ 
       dispatch(fetchPricesSuccess());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Fiyatlar çekilemedi.';
       dispatch(fetchPricesError(message));
     }
-
+ 
   }, [holdings, dispatch]);
 
-  // Sadece holding listesi değiştiğinde fetch'i tetikle
   useEffect(() => {
     fetchPrices(false);
   }, [fetchPrices]);

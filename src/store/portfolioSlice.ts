@@ -2,9 +2,16 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { Holding, PriceData } from '../models/types';
 
+// Önbellek öğesinin tipi
+export interface PriceCacheItem {
+  data: PriceData;
+  timestamp: number;
+}
+
 interface PortfolioState {
   holdings: Holding[];
   prices: Record<string, PriceData>;
+  priceCache: Record<string, PriceCacheItem>; // Kalıcı önbellek
   loading: boolean;
   error: string | null;
   /** Hangi sembollerin fiyatının güncellendiğini takip eder */
@@ -15,6 +22,7 @@ interface PortfolioState {
 const initialState: PortfolioState = {
   holdings: [],
   prices: {},
+  priceCache: {},
   loading: false,
   error: null,
   updatingSymbols: [],
@@ -81,6 +89,16 @@ const portfolioSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    
+    // Önbelleğe bir öğe ekle veya güncelle
+    setPriceCacheItem: (state, action: PayloadAction<{ symbol: string; item: PriceCacheItem }>) => {
+      state.priceCache[action.payload.symbol] = action.payload.item;
+    },
+
+    // Fiyat önbelleğini temizle
+    clearPriceCache: (state) => {
+      state.priceCache = {};
+    },
   },
 });
 
@@ -93,6 +111,8 @@ export const {
   fetchPricesError,
   updatePriceData,
   clearError,
+  setPriceCacheItem,
+  clearPriceCache,
 } = portfolioSlice.actions;
 
 export default portfolioSlice.reducer; 

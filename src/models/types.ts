@@ -48,6 +48,8 @@ export interface PriceData {
   currency?: string; // Para birimi (örn. "TRY", "USD")
   historicalData?: HistoricalPrice[]; // Geçmiş veriyi de içerebilir
   error?: string;
+  source?: 'cache' | 'api'; // Fiyat verisinin kaynağı
+  priceDate?: string; // Fiyatın ait olduğu tarih (YYYY-MM-DD)
 }
 
 export interface PortfolioState {

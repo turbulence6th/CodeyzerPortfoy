@@ -2,6 +2,7 @@ import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { CategoryCharts } from './pages/CategoryCharts';
+import { Settings } from './pages/Settings';
 import { useAppSelector } from './hooks/redux';
 import { usePrices } from './hooks/usePrices';
 
@@ -17,6 +18,9 @@ function AppContent() {
       </div>
       <div style={{ display: location.pathname === '/category-charts' ? 'block' : 'none' }}>
         <CategoryCharts />
+      </div>
+      <div style={{ display: location.pathname === '/settings' ? 'block' : 'none' }}>
+        <Settings />
       </div>
     </Layout>
   );

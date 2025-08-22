@@ -1,6 +1,8 @@
 import axios from 'axios';
-import type { PriceData, HistoricalPrice } from '../models/types';
+import type { PriceData, HistoricalPrice, AssetType } from '../models/types';
 import { tefasService } from './tefasService';
+import { USE_MOCK_API } from '../utils/config';
+import { mockAxiosGet } from './mockApiService';
 
 // Swissquote API'sinden gelen veri yapısı için tipler
 interface SwissquoteProfilePrice {
@@ -64,7 +66,7 @@ const SWISSQUOTE_API_BASE_URL = isDevelopment
 
 export class PriceService {
   private static instance: PriceService;
-  private cache: Map<string, { data: PriceData; timestamp: number }> = new Map();
+  // private cache: Map<string, { data: PriceData; timestamp: number }> = new Map(); Artık Redux'ta
   private readonly CACHE_DURATION = 60000; // 1 dakika
 
   static getInstance(): PriceService {
@@ -74,47 +76,117 @@ export class PriceService {
     return PriceService.instance;
   }
 
-  private isCacheValid(timestamp: number): boolean {
-    return Date.now() - timestamp < this.CACHE_DURATION;
+  public static getAssetTypeFromSymbol(symbol: string): AssetType {
+    // Kural: Fonlar 3 büyük harfli kodlardır. (Örn: YAS, IPJ)
+    // GAU (Gram Altın) ve XAG (Gümüş) gibi özel kodları hariç tutuyoruz.
+    if (symbol.length === 3 && symbol.toUpperCase() === symbol && !['GAU', 'XAG'].includes(symbol)) {
+      return 'FUND';
+    }
+  
+    // Kural: BIST hisseleri ".IS" eki alır.
+    if (PriceService.transformSymbol(symbol).endsWith('.IS')) {
+      return 'STOCK';
+    }
+  
+    // Kural: Döviz çiftleri (özel durumlar hariç)
+    if (['USDTRY', 'EURTRY', 'XAGTRY'].includes(symbol)) {
+      return 'CURRENCY';
+    }
+  
+    // Kural: Değerli metaller
+    if (['GAU', 'GAUTRY', 'XAUUSD'].includes(symbol)) {
+      return 'COMMODITY';
+    }
+  
+    // Varsayılan olarak CURRENCY döndür veya daha spesifik kurallar ekle
+    return 'CURRENCY';
   }
 
-  async fetchPrices(symbols: string[]): Promise<Record<string, PriceData>> {
-    if (symbols.length === 0) return {};
+  public static transformSymbol(symbol: string): string {
+    const symbolMap: Record<string, string> = {
+      'USDTRY': 'USDTRY=X',
+      'EURTRY': 'EURTRY=X',
+      'XAGTRY': 'XAGTRY=X', // Gümüş / TL
+    };
 
-    const prices: Record<string, PriceData> = {};
-    const symbolsToFetch: string[] = [];
-
-    // Önce cache'den kontrol et
-    for (const symbol of symbols) {
-      const cached = this.cache.get(symbol);
-      if (cached && this.isCacheValid(cached.timestamp)) {
-        prices[symbol] = cached.data;
-      } else {
-        symbolsToFetch.push(symbol);
-      }
+    // Öncelikle özel eşleştirmelere bak
+    if (symbolMap[symbol]) {
+      return symbolMap[symbol];
     }
 
-    // Gerekli sembolleri API'den çek (tek tek)
-    if (symbolsToFetch.length > 0) {
-      try {
-        const fetchPromises = symbolsToFetch.map(symbol => this.fetchSinglePrice(symbol));
-        const results = await Promise.allSettled(fetchPromises);
+    // Türk varlıkları için sembol dönüşümü
+    if (/^[A-Z]{3,6}$/.test(symbol) && !symbol.includes('=') && !symbol.includes('.')) {
+      return `${symbol}.IS`;
+    }
+
+    // Değişiklik yoksa orijinal sembolü dön
+    return symbol;
+  }
+
+  public isCacheValid(symbol: string, timestamp: number, isRefresh = false): boolean {
+    const assetType = PriceService.getAssetTypeFromSymbol(symbol);
+    const now = new Date();
+    const cacheDate = new Date(timestamp);
+
+    // --- Manuel Yenileme Mantığı ---
+    if (isRefresh) {
+      // Döviz ve emtialar her zaman yenilenir.
+      if (assetType === 'CURRENCY' || assetType === 'COMMODITY') {
+        return false; 
+      }
+      // Hisseler sadece piyasa saatleri içindeyse yenilenir.
+      if (assetType === 'STOCK') {
+        const day = now.getUTCDay();
+        const utcHour = now.getUTCHours();
+        const utcMinutes = now.getUTCMinutes();
+        const isMarketHours = day > 0 && day < 6 && ((utcHour >= 7 && utcHour < 15) || (utcHour === 15 && utcMinutes <= 10));
+        if (isMarketHours) {
+          return false; // Piyasa açıksa, yenilemeye zorla.
+        }
+      }
+      // Fonlar ve piyasa dışı hisseler için yenileme talebi dikkate alınmaz,
+      // standart önbellek kontrolüne devam edilir.
+    }
+
+    // --- Standart Önbellek Geçerlilik Mantığı ---
+    switch (assetType) {
+      case 'FUND':
+        return now.toDateString() === cacheDate.toDateString();
+  
+      case 'STOCK': {
+        const day = now.getUTCDay(); // Pazar=0, Ctesi=6
+        const utcHour = now.getUTCHours();
+        const utcMinutes = now.getUTCMinutes();
         
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled' && result.value) {
-            const symbol = symbolsToFetch[index];
-            prices[symbol] = result.value;
-          } else {
-            console.warn(`⚠️ Failed to fetch price for ${symbolsToFetch[index]}`);
-          }
-        });
-      } catch (error) {
-        console.error('🚨 Fiyat çekme hatası:', error);
-        throw new Error('Fiyat verileri alınamadı. Lütfen tekrar deneyin.');
+        // Piyasa saatleri Turkey Time (UTC+3): 10:00 - 18:10 arası.
+        // UTC karşılığı: 07:00 - 15:10 arası.
+        const isMarketHours = 
+          day > 0 && day < 6 && // Hafta içi mi?
+          (
+            (utcHour >= 7 && utcHour < 15) || // 07:00 - 14:59 UTC
+            (utcHour === 15 && utcMinutes <= 10) // 15:00 - 15:10 UTC
+          );
+  
+        if (isMarketHours) {
+          // Piyasa açıkken: Kısa süreli önbellek (1 dk)
+          return now.getTime() - timestamp < this.CACHE_DURATION;
+        } else {
+          // Piyasa kapalıyken: Günlük önbellek
+          // Önbellek tarihinin bugünün tarihiyle aynı olması yeterli.
+          return now.toDateString() === cacheDate.toDateString();
+        }
       }
+  
+      case 'CURRENCY':
+      case 'COMMODITY':
+      default:
+        // GAUTRY anlık hesaplandığı için asla kendi önbelleğini kullanmaz.
+        if (symbol === 'GAU' || symbol === 'GAUTRY') {
+          return false;
+        }
+        // Diğer tüm varlıklar için: Standart kısa süreli önbellek
+        return now.getTime() - timestamp < this.CACHE_DURATION;
     }
-
-    return prices;
   }
 
   async fetchHistoricalPrices(
@@ -122,7 +194,7 @@ export class PriceService {
     range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y'| '5y' = '1mo'
   ): Promise<HistoricalPrice[]> {
     // Eğer fon ise, her zaman TEFAS servisini kullan
-    if (/^[A-Z]{3}$/.test(symbol)) {
+    if (PriceService.getAssetTypeFromSymbol(symbol) === 'FUND') { // Statik metoda çevrildi
       if (range === '1d') {
         // Günlük veri için eski hızlı yöntemi kullanabiliriz
         const priceData = await this.fetchSinglePrice(symbol);
@@ -137,10 +209,12 @@ export class PriceService {
     const url = `${API_BASE_URL}/${transformedSymbol}?range=${range}&interval=${interval}`;
 
     try {
-      const response = await axios.get<YahooChartResponse>(url, {
-        timeout: 15000,
-        headers: { 'Accept': 'application/json' },
-      });
+      const response = USE_MOCK_API
+        ? await mockAxiosGet(url.replace('/api/yahoo', 'https://query1.finance.yahoo.com'))
+        : await axios.get<YahooChartResponse>(url, {
+            timeout: 15000,
+            headers: { 'Accept': 'application/json' },
+          });
 
       if (response.data?.chart?.result?.[0]) {
         const result = response.data.chart.result[0];
@@ -185,9 +259,18 @@ export class PriceService {
     }
   }
 
-  public async fetchSinglePrice(symbol: string): Promise<PriceData> {
+  public async fetchSinglePrice(
+    symbol: string, 
+    isRefresh = false,
+    dependencies: { usdTryPrice?: PriceData } = {} // Bağımlılıklar için opsiyonel parametre
+  ): Promise<PriceData> {
+    // Önbellek kontrolü ve yönetimi artık usePrices hook'unda yapılıyor.
+    // Bu servis sadece veri çekme ve işleme görevini üstlenir.
+
+    console.log(`[API] Fetching new data for ${symbol} (Refresh: ${isRefresh}).`);
+
     if (symbol === 'TRY') {
-      return {
+      const tryData: PriceData = {
         symbol: 'TRY',
         price: 1,
         change: 0,
@@ -195,12 +278,15 @@ export class PriceService {
         previousClose: 1,
         historicalData: [],
         lastUpdate: new Date().toISOString(),
+        source: 'api', // Kaynak bilgisi
       };
+      // this.cache.set(symbol, { data: tryData, timestamp: Date.now() });
+      return tryData;
     }
 
     // Gram Altın (GAU) için özel yönlendirme
     if (symbol === 'GAU' || symbol === 'GAUTRY') {
-      return this.fetchGoldPrice(symbol);
+      return this.fetchGoldPrice(symbol, dependencies.usdTryPrice || null);
     }
 
     if (symbol === 'XAUUSD' || symbol === 'XAUTRY') {
@@ -212,9 +298,17 @@ export class PriceService {
       try {
         const fundPrice = await tefasService.fetchFundPrice(symbol);
         if (fundPrice) {
-          // Fon fiyatı bulundu, cache'e ekle ve dön
-          this.cache.set(symbol, { data: fundPrice, timestamp: Date.now() });
-          return fundPrice;
+          // Eğer TEFAS o gün için henüz fiyat açıklamadıysa (fiyat=0),
+          // bu veriyi cache'leme. Bu sayede bir sonraki istekte tekrar denenir.
+          if (fundPrice.price === 0) {
+            console.warn(`[API] Zero price for fund ${symbol}. Not caching.`);
+            return { ...fundPrice, source: 'api' as const }; // Cache'lemeden dön
+          }
+
+          // Fon fiyatı bulundu ve 0'dan farklı, cache'e ekle ve dön
+          const apiData = { ...fundPrice, source: 'api' as const };
+          // this.cache.set(symbol, { data: apiData, timestamp: Date.now() });
+          return apiData;
         }
         // Eğer fon fiyatı bulunamazsa Yahoo Finance denemeye devam et
       } catch (error) {
@@ -224,7 +318,7 @@ export class PriceService {
 
     // Altın için özel işlem: GC=F (ons altın USD) + USDTRY
     if (symbol === 'GAUTRY') {
-      return this.fetchGoldPrice(symbol);
+      return this.fetchGoldPrice(symbol, dependencies.usdTryPrice || null);
     }
 
     const transformedSymbol = PriceService.transformSymbol(symbol);
@@ -233,10 +327,10 @@ export class PriceService {
     const yahooData = await this.fetchYahooPrice(transformedSymbol);
     if (yahooData && !yahooData.error) {
       // fetchYahooPrice dönüşünde sembol değişmiş olabilir; orijinal sembolü geri yaz
-      const priceData: PriceData = { ...yahooData, symbol };
+      const priceData: PriceData = { ...yahooData, symbol, source: 'api' };
 
-      // Cache'e kaydet
-      this.cache.set(symbol, { data: priceData, timestamp: Date.now() });
+      // Cache'e kaydetme işlemi artık usePrices hook'unda
+      // this.cache.set(symbol, { data: { ...priceData, source: undefined }, timestamp: Date.now() });
       return priceData;
     }
 
@@ -260,20 +354,21 @@ export class PriceService {
   }
 
   // Altın için özel çevrim: GC=F (ons altın USD) -> Gram altın TRY
-  private async fetchGoldPrice(symbol: string): Promise<PriceData> {
+  private async fetchGoldPrice(
+    symbol: string,
+    usdTryResponse: PriceData | null // USDTRY fiyatını parametre olarak al
+  ): Promise<PriceData> {
     try {
       // 1 ons = 31.1035 gram
       const OUNCE_TO_GRAM = 31.1035;
 
-      // Paralel olarak gerekli tüm verileri çek
+      // Paralel olarak GEREKLİ OLMAYAN diğer verileri çek
       const [
         ounceUsdSwissquoteResponse,
         ounceUsdYahooResponse,
-        usdTryResponse,
       ] = await Promise.all([
         this.fetchSwissquotePrice('XAUUSD'),
         this.fetchYahooPrice('GC=F'), // Dünkü ons fiyatı için Yahoo'yu kullan
-        this.fetchSinglePrice('USDTRY'),
       ]);
 
       // Gelen verilerin geçerliliğini kontrol et
@@ -311,7 +406,10 @@ export class PriceService {
         name: 'Gram Altın',
         currency: 'TRY',
         lastUpdate: new Date().toISOString(),
+        source: 'api', // -> İkonun görünmesi için kaynak bilgisi eklendi
       };
+      // Altın fiyatının kendisi, anlık hesaplandığı için cache'lenmez.
+      // Cache'leme sorumluluğu usePrices'tadır.
       return result;
     } catch (error) {
       console.error(`Gram altın hesaplanırken HATA oluştu for ${symbol}:`, error);
@@ -327,6 +425,7 @@ export class PriceService {
         currency: 'TRY',
         lastUpdate: new Date().toISOString(),
         error: 'Altın fiyatı hesaplanamadı', // Hata mesajı eklendi
+        source: 'api', // -> Hata durumunda da kaynak bilgisi ekleniyor
       };
     }
   }
@@ -338,7 +437,9 @@ export class PriceService {
     const url = `${SWISSQUOTE_API_BASE_URL}/public-quotes/bboquotes/instrument/${instrument}/${currency}`;
 
     try {
-      const response = await axios.get<SwissquotePlatformData[]>(url);
+      const response = USE_MOCK_API
+        ? await mockAxiosGet(url.replace('/api/swissquote', 'https://forex-data-feed.swissquote.com'))
+        : await axios.get<SwissquotePlatformData[]>(url);
       const data = response.data;
 
       if (!data || !Array.isArray(data) || data.length === 0) {
@@ -352,8 +453,8 @@ export class PriceService {
       }
 
       const profile =
-        platform.spreadProfilePrices.find(p => p.spreadProfile === 'elite') ||
-        platform.spreadProfilePrices.find(p => p.spreadProfile === 'prime') ||
+        platform.spreadProfilePrices.find((p: SwissquoteProfilePrice) => p.spreadProfile === 'elite') ||
+        platform.spreadProfilePrices.find((p: SwissquoteProfilePrice) => p.spreadProfile === 'prime') ||
         platform.spreadProfilePrices[0];
       
       if (!profile) {
@@ -400,10 +501,12 @@ export class PriceService {
     const url = `${API_BASE_URL}/${symbol}?range=5d&interval=1d&includePrePost=false`;
 
     try {
-      const response = await axios.get<YahooChartResponse>(url, {
-        timeout: 15000,
-        headers: { 'Accept': 'application/json' },
-      });
+      const response = USE_MOCK_API
+        ? await mockAxiosGet(url.replace('/api/yahoo', 'https://query1.finance.yahoo.com'))
+        : await axios.get<YahooChartResponse>(url, {
+            timeout: 15000,
+            headers: { 'Accept': 'application/json' },
+          });
 
       if (response.data?.chart?.result?.[0]) {
         const result = response.data.chart.result[0];
@@ -411,7 +514,7 @@ export class PriceService {
         
         const indicators = result.indicators?.quote?.[0];
         const adjCloseData = result.indicators?.adjclose?.[0];
-        const closePrices = indicators?.close?.filter((price): price is number => price != null) || [];
+        const closePrices = indicators?.close?.filter((price: number | null): price is number => price != null) || [];
         
         const currentPrice = meta.regularMarketPrice;
 
@@ -430,31 +533,30 @@ export class PriceService {
         }
         
         // Önceki kapanış fiyatını belirlemek için en sağlam yöntem:
-        // Her zaman tarihsel kapanış fiyatlarını birincil kaynak olarak kullan.
-        let previousClose: number | null = null;
+        let previousCloseSource: number | undefined;
 
         if (closePrices.length >= 2) {
           // Listenin sonundaki fiyat en güncel kapanış, sondan ikinci ise bir önceki günün kapanışıdır.
-          // Bazen en güncel kapanış, gün içi bir veri olabilir. Bu yüzden her zaman sondan ikinciyi almak daha güvenilirdir.
-          previousClose = closePrices[closePrices.length - 2];
+          previousCloseSource = closePrices[closePrices.length - 2];
         } else {
           // Eğer geçmiş veri yetersizse, meta verisine fallback yap.
-          previousClose = meta.previousClose;
+          previousCloseSource = meta.previousClose;
         }
 
         // Eğer hiçbir şekilde önceki kapanış bulunamazsa, sıfır değişim için mevcut fiyata dön
-        if (previousClose == null) {
+        if (previousCloseSource == null) { // null veya undefined kontrolü
             console.warn(`⚠️ ${symbol}: Önceki kapanış fiyatı belirlenemedi. Değişim 0 olarak ayarlandı.`);
-            previousClose = currentPrice;
         }
+        
+        const previousClose = previousCloseSource ?? currentPrice;
         
         let change: number;
         let changePercent: number;
 
         // GMSTR için özel değişim hesaplaması (açılışa göre)
         if (symbol === 'GMSTR.IS') {
-          const openPrices = indicators?.open?.filter((p): p is number => p !== null) || [];
-          const adjClosePrices = adjCloseData?.adjclose?.filter((p): p is number => p !== null) || [];
+          const openPrices = indicators?.open?.filter((p: number | null): p is number => p !== null) || [];
+          const adjClosePrices = adjCloseData?.adjclose?.filter((p: number | null): p is number => p !== null) || [];
 
           if (adjClosePrices.length > 0 && openPrices.length > 0) {
             const priceToCompare = adjClosePrices[adjClosePrices.length - 1];
@@ -532,52 +634,18 @@ export class PriceService {
       };
     }
   }
-
-  // Türk varlıkları için sembol dönüşümü
-  static transformSymbol(symbol: string): string {
-    const symbolMap: Record<string, string> = {
-      'USDTRY': 'USDTRY=X',
-      'EURTRY': 'EURTRY=X',
-      // GAUTRY artık GC=F + USDTRY üzerinden hesaplanıyor
-      'XAGTRY': 'XAGTRY=X', // Gümüş / TL
-    };
-
-    // Öncelikle özel eşleştirmelere bak
-    if (symbol in symbolMap) {
-      return symbolMap[symbol];
-    }
-
-    // Ardından BIST hisse senetleri için .IS ekle
-    if (/^[A-Z]{3,6}$/.test(symbol) && !symbol.includes('=') && !symbol.includes('.')) {
-      return `${symbol}.IS`;
-    }
-
-    // Değişiklik yoksa orijinal sembolü dön
-    return symbol;
-  }
-
-  // BIST hisse sembolleri
-  static getBISTSymbol(code: string): string {
-    return `${code}.IS`;
-  }
-
-  clearCache(): void {
-    this.cache.clear();
-    console.log('🗑️ Price cache cleared');
-  }
 }
 
 // Gerçek servis örneği
 const realPriceService = PriceService.getInstance();
 
-// Mock servis importu
-import { MockPriceService } from './mockPriceService';
-import { USE_MOCK_API } from '../utils/config';
+// Mock servis artık kullanılmıyor, yeni mockApiService mekanizması var.
+// import { MockPriceService } from './mockPriceService';
 
 // Hangi servisin kullanılacağını belirle
-const priceServiceToUse = USE_MOCK_API 
-  ? MockPriceService.getInstance() 
-  : realPriceService;
+// const priceServiceToUse = USE_MOCK_API 
+//   ? MockPriceService.getInstance() 
+//   : realPriceService;
 
 // Seçilen servisi export et
-export const priceService = priceServiceToUse as unknown as PriceService; 
+export const priceService = realPriceService;

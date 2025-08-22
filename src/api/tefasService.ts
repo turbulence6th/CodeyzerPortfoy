@@ -1,18 +1,22 @@
 import axios from 'axios';
 import dayjs from 'dayjs';
 import type { PriceData, HistoricalPrice } from '../models/types';
+import { USE_MOCK_API } from '../utils/config';
+import { mockAxiosGet } from './mockApiService';
+
+type FundHistoryItem = {
+  TARIH: string;
+  FONKODU: string;
+  FONUNVAN: string;
+  FIYAT: number;
+  TEDPAYSAYISI: number;
+  KISISAYISI: number;
+  PORTFOYBUYUKLUK: number;
+  BORSABULTENFIYAT: string;
+};
 
 type TefasApiResponse = {
-  data?: Array<{
-    TARIH: string;
-    FONKODU: string;
-    FONUNVAN: string;
-    FIYAT: number;
-    TEDPAYSAYISI: number;
-    KISISAYISI: number;
-    PORTFOYBUYUKLUK: number;
-    BORSABULTENFIYAT: string;
-  }>;
+  data?: FundHistoryItem[];
 };
 
 // TEFAS yatırım fonu fiyatlarını çeken servis
@@ -145,14 +149,16 @@ export class TefasService {
     formData.append('fonkod', fundCode);
 
     try {
-      const response = await axios.post<TefasApiResponse>(endpoint, formData, {
-        headers: {
-          Accept: 'application/json, text/javascript, */*; q=0.01',
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        timeout: 15000,
-      });
+      const response = USE_MOCK_API
+        ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
+        : await axios.post<TefasApiResponse>(endpoint, formData, {
+            headers: {
+              Accept: 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            timeout: 15000,
+          });
 
       const apiResponse = response.data;
       const items = apiResponse?.data;
@@ -163,16 +169,11 @@ export class TefasService {
 
       // Array tarihe göre yeni->eski sıralı (TARIH timestamp'i büyük olan en yeni)
       // En yeni veriyi al
-      items.sort((a: any, b: any) => parseInt(b.TARIH) - parseInt(a.TARIH));
+      items.sort((a: FundHistoryItem, b: FundHistoryItem) => parseInt(b.TARIH) - parseInt(a.TARIH));
       
-      // Son günün fiyatı 0'sa bir önceki günü bul
-      let latest = items[0];
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].FIYAT > 0) {
-          latest = items[i];
-          break; // Fiyatı 0'dan büyük ilk veriyi al
-        }
-      }
+      // Fiyat 0 olsa bile en güncel veriyi alıyoruz.
+      // Fiyatın 0 olup olmadığını kontrol etme sorumluluğu priceService'e aittir.
+      const latest = items[0];
       
       console.log(`📊 TEFAS ${fundCode} Debug:`, {
         tarih: new Date(parseInt(latest.TARIH)).toLocaleDateString('tr-TR'),
@@ -189,10 +190,11 @@ export class TefasService {
       // Önceki gün fiyatı (varsa)
       let change = 0;
       let changePercent = 0;
+      let previousClose: number | undefined = undefined;
 
       if (items.length >= 2) {
         // Değişim hesaplaması için, geçerli fiyattan bir önceki fiyatı bul
-        const currentIndex = items.findIndex(item => item.TARIH === latest.TARIH);
+        const currentIndex = items.findIndex((item: FundHistoryItem) => item.TARIH === latest.TARIH);
         let prevItem = null;
         if (currentIndex !== -1 && currentIndex + 1 < items.length) {
             prevItem = items[currentIndex + 1];
@@ -203,13 +205,14 @@ export class TefasService {
           if (typeof prevPrice === 'number' && !isNaN(prevPrice) && prevPrice > 0) {
             change = price - prevPrice;
             changePercent = (change / prevPrice) * 100;
+            previousClose = prevPrice;
           }
         }
       }
       
       // Tüm geçmiş veriyi de ekle (eski->yeni sıralı)
       const historicalData: HistoricalPrice[] = items
-        .map(item => ({
+        .map((item: FundHistoryItem) => ({
           date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
           price: item.FIYAT,
         }))
@@ -220,10 +223,19 @@ export class TefasService {
         price,
         change,
         changePercent,
+        previousClose, // Önceki günün kapanış fiyatını ekle
         lastUpdate: new Date().toISOString(),
         name: latest.FONUNVAN,
         historicalData,
       };
+
+      // Fiyatın tarihini ekle. Eğer en güncel fiyat 0 ise ve bir önceki günün
+      // fiyatı mevcutsa, o fiyatın tarihini "etkin tarih" olarak kabul et.
+      const prevItem = items.length >= 2 ? items[1] : null;
+      const effectiveTarih = (price === 0 && prevItem) ? prevItem.TARIH : latest.TARIH;
+      if (effectiveTarih) {
+        priceData.priceDate = new Date(parseInt(effectiveTarih)).toISOString().split('T')[0];
+      }
 
       this.cache.set(fundCode, { data: priceData, timestamp: Date.now() });
       return priceData;
@@ -258,22 +270,24 @@ export class TefasService {
     formData.append('fonkod', fundCode);
 
     try {
-      const response = await axios.post<TefasApiResponse>(endpoint, formData, {
-        headers: {
-          Accept: 'application/json, text/javascript, */*; q=0.01',
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-        timeout: 20000, // extend timeout for larger data
-      });
+      const response = USE_MOCK_API
+        ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
+        : await axios.post<TefasApiResponse>(endpoint, formData, {
+            headers: {
+              Accept: 'application/json, text/javascript, */*; q=0.01',
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            timeout: 20000, // extend timeout for larger data
+          });
 
       const items = response.data?.data;
       if (!items || items.length === 0) return [];
 
       // Sort old to new for charting
-      items.sort((a: any, b: any) => parseInt(a.TARIH) - parseInt(b.TARIH)); 
+      items.sort((a: FundHistoryItem, b: FundHistoryItem) => parseInt(a.TARIH) - parseInt(b.TARIH)); 
 
-      return items.map(item => ({
+      return items.map((item: FundHistoryItem) => ({
         date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
         price: item.FIYAT,
       }));

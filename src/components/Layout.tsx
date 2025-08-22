@@ -16,6 +16,7 @@ import {
   MdAccountBalance as AccountBalance,
   MdDashboard as Dashboard,
   MdBarChart as BarChart,
+  MdSettings as SettingsIcon,
 } from 'react-icons/md';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
@@ -37,6 +38,8 @@ export const Layout: React.FC<LayoutProps> = ({
         return 0;
       case '/category-charts':
         return 1;
+      case '/settings':
+        return 2;
       default:
         return 0;
     }
@@ -49,6 +52,9 @@ export const Layout: React.FC<LayoutProps> = ({
         break;
       case 1:
         navigate('/category-charts');
+        break;
+      case 2:
+        navigate('/settings');
         break;
     }
   };
@@ -100,6 +106,10 @@ export const Layout: React.FC<LayoutProps> = ({
           <BottomNavigationAction
             label="Kategoriler"
             icon={<BarChart />}
+          />
+          <BottomNavigationAction
+            label="Ayarlar"
+            icon={<SettingsIcon />}
           />
         </BottomNavigation>
       </Paper>

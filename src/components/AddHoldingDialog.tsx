@@ -95,10 +95,11 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
   const validateSymbol = async (symbolToValidate: string): Promise<boolean> => {
     try {
       setValidating(true);
-      const prices = await priceService.fetchPrices([symbolToValidate]);
-      const priceData = prices[symbolToValidate];
+      const priceData = await priceService.fetchSinglePrice(symbolToValidate);
       
-      if (priceData && priceData.price > 0) {
+      // Fiyat 0 olsa bile, önceki günün fiyatı varsa sembol geçerlidir.
+      // Bu, AFA gibi fonların güncel fiyatı 0 olduğunda eklenebilmesini sağlar.
+      if (priceData && (priceData.price > 0 || (priceData.previousClose && priceData.previousClose > 0))) {
         return true;
       } else {
         return false;

@@ -21,7 +21,7 @@ listenerMiddleware.startListening({
 const portfolioPersistConfig = {
   key: 'portfolio',
   storage,
-  whitelist: ['holdings'] // Sadece holdings'leri persist et
+  whitelist: ['holdings', 'priceCache'] // holdings ve priceCache'i persist et
 };
 
 const categoryPersistConfig = {

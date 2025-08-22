@@ -11,6 +11,9 @@ import {
   MdAssessment as AssessmentIcon,
   MdMoreVert as MoreVertIcon,
   MdErrorOutline as ErrorOutlineIcon,
+  MdCloudDone as CloudDoneIcon,
+  MdCloudDownload as CloudDownloadIcon,
+  MdEventBusy as StaleDateIcon,
 } from 'react-icons/md';
 import type { Holding, AssetType, PriceData, CategoryChart } from '../models/types';
 import { StockAnalysisDialog } from './StockAnalysisDialog';
@@ -120,7 +123,11 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   const calculateCategoryTotal = (typeHoldings: Holding[]) => {
     return typeHoldings.reduce((total, holding) => {
       const priceData = prices[holding.symbol];
-      const value = priceData ? priceData.price * holding.amount : 0;
+      // Eğer anlık fiyat 0 ise ve önceki günün fiyatı varsa, onu kullan
+      const priceToUse = (priceData?.price === 0 && priceData.previousClose)
+        ? priceData.previousClose
+        : priceData?.price;
+      const value = priceToUse ? priceToUse * holding.amount : 0;
       return total + value;
     }, 0);
   };
@@ -138,9 +145,34 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
     const isPositive = (priceData?.changePercent ?? 0) >= 0;
     const holdingCategories = getHoldingCategories(holding.id);
     
+    // Eğer anlık fiyat 0 ise ve önceki günün fiyatı varsa, onu kullan
+    const priceToUse = (priceData?.price === 0 && priceData.previousClose)
+      ? priceData.previousClose
+      : priceData?.price;
+
     // Each row now manages its own menu state
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const isMenuOpen = Boolean(anchorEl);
+
+    // Veri Kaynağı İkonu
+    const sourceIcon = priceData?.source ? (
+      <Tooltip title={priceData.source === 'cache' ? 'Fiyat önbellekten alındı' : 'Fiyat anlık olarak çekildi'}>
+        <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+          {priceData.source === 'cache' ? <CloudDoneIcon size="0.9rem" /> : <CloudDownloadIcon size="0.9rem" />}
+        </Box>
+      </Tooltip>
+    ) : null;
+
+    // Eski Tarih Uyarısı İkonu
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isStalePrice = holding.type === 'FUND' && priceData?.priceDate && priceData.priceDate !== todayStr;
+    const staleDateIcon = isStalePrice ? (
+      <Tooltip title={`Bu fiyat ${new Date(priceData.priceDate!).toLocaleDateString('tr-TR')} tarihine aittir`}>
+        <Box sx={{ display: 'flex', alignItems: 'center', color: 'warning.main' }}>
+          <StaleDateIcon size="0.9rem" />
+        </Box>
+      </Tooltip>
+    ) : null;
 
     const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
       event.stopPropagation();
@@ -196,6 +228,8 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
           <Box sx={{ flex: 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
               <Typography variant="subtitle1" fontWeight="medium">{symbol}</Typography>
+              {sourceIcon}
+              {staleDateIcon}
             </Box>
             {priceData?.name && (
               <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', mb: 0.25 }}>
@@ -204,8 +238,8 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
             )}
             <Typography variant="body2" color="text.secondary">
               {amount} adet
-              {priceData && !priceData.error && (
-                <> • ₺{priceData.price.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} birim fiyat</>
+              {priceData && !priceData.error && priceToUse && (
+                <> • ₺{priceToUse.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} birim fiyat</>
               )}
             </Typography>
             {holdingCategories.length > 0 && (
@@ -248,9 +282,11 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
                 </Tooltip>
             ) : (
               <>
-                <Typography variant="subtitle1" fontWeight="medium">
-                  ₺{(priceData ? priceData.price * amount : 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="medium">
+                    ₺{(priceToUse ? priceToUse * amount : 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Typography>
+                </Box>
                 {priceData && (
                   <Typography variant="body2" color={isPositive ? 'success.main' : 'error.main'}>
                     {isPositive ? '+' : ''}{priceData.changePercent.toFixed(2)}%
