@@ -19,6 +19,7 @@ import type { Holding, AssetType, PriceData, CategoryChart } from '../models/typ
 import { StockAnalysisDialog } from './StockAnalysisDialog';
 import { AssetDetailDialog } from './AssetDetailDialog';
 import { useAppSelector } from '../hooks/redux';
+import { useBackButton } from '../hooks/useBackButton';
 
 interface HoldingsListProps {
   holdings: Holding[];
@@ -41,14 +42,23 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
 
-  const handleOpenAnalysis = (holding: Holding) => {
-    setSelectedHolding(holding);
-    setAnalysisDialogOpen(true);
-  };
-
   const handleCloseAnalysis = () => {
     setAnalysisDialogOpen(false);
     setSelectedHolding(null);
+  };
+
+  const handleCloseDetail = () => {
+    setDetailDialogOpen(false);
+    setSelectedHolding(null);
+  };
+
+  // Mobil Geri Tuşu için genel hook kullanımı
+  useBackButton(handleCloseAnalysis, analysisDialogOpen);
+  useBackButton(handleCloseDetail, detailDialogOpen);
+
+  const handleOpenAnalysis = (holding: Holding) => {
+    setSelectedHolding(holding);
+    setAnalysisDialogOpen(true);
   };
 
   const handleOpenDetail = (holding: Holding) => {
@@ -56,11 +66,6 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
       setSelectedHolding(holding);
       setDetailDialogOpen(true);
     }
-  };
-
-  const handleCloseDetail = () => {
-    setDetailDialogOpen(false);
-    setSelectedHolding(null);
   };
   
   const handlePanelChange = (panel: string) => {
@@ -184,10 +189,6 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
       setAnchorEl(null);
     };
 
-    const handleRowClick = () => {
-      handleOpenDetail(holding);
-    };
-
     const handleMenuItemClick = (action: () => void) => {
       action();
       handleMenuClose();
@@ -196,15 +197,14 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
     return (
       <Box
         key={holding.id}
-        onClick={handleRowClick}
         sx={{
           position: 'relative',
           borderBottom: isLast ? 'none' : '1px solid',
           borderColor: 'divider',
           backgroundColor: 'background.paper',
-          cursor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'pointer' : 'default',
+          // cursor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'pointer' : 'default', // Satır tıklaması kaldırıldı
           '&:hover': {
-            backgroundColor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'action.hover' : 'transparent',
+            // backgroundColor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'action.hover' : 'transparent', // Hover efekti kaldırıldı
           },
           display: 'flex',
           alignItems: 'center',
@@ -315,6 +315,12 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
             <MenuItem onClick={() => handleMenuItemClick(() => onOpenAnalysis(holding))}>
               <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Analiz</ListItemText>
+            </MenuItem>
+          )}
+          {(holding.type === 'STOCK' || holding.type === 'FUND') && (
+            <MenuItem onClick={() => handleMenuItemClick(() => handleOpenDetail(holding))}>
+              <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>Grafiği Görüntüle</ListItemText>
             </MenuItem>
           )}
           <MenuItem onClick={() => handleMenuItemClick(() => onEdit(holding))}>

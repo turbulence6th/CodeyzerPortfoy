@@ -3,6 +3,7 @@ import { Box, Fab } from '@mui/material';
 import { MdAdd as AddIcon } from 'react-icons/md';
 import { useAppSelector, useAppDispatch } from '../hooks/redux';
 import { usePrices } from '../hooks/usePrices';
+import { useBackButton } from '../hooks/useBackButton';
 import { addChart, removeChart, updateChart } from '../store/categorySlice';
 import { CategoryChartsList } from '../components/CategoryChartsList';
 import { AddCategoryChartDialog } from '../components/AddCategoryChartDialog';
@@ -23,6 +24,21 @@ export const CategoryCharts: React.FC = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedChart, setSelectedChart] = useState<CategoryChartType | null>(null);
+
+  // Geri tuşu yönetimi
+  const handleCloseEditDialog = () => {
+    setEditDialogOpen(false);
+    setSelectedChart(null);
+  };
+
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setSelectedChart(null);
+  };
+
+  useBackButton(() => setAddDialogOpen(false), addDialogOpen);
+  useBackButton(handleCloseEditDialog, editDialogOpen);
+  useBackButton(handleCloseDeleteDialog, deleteDialogOpen);
 
   const handleAddChart = (chart: CategoryChartType) => {
     dispatch(addChart(chart));
@@ -92,10 +108,7 @@ export const CategoryCharts: React.FC = () => {
       <EditCategoryChartDialog
         open={editDialogOpen}
         chart={selectedChart}
-        onClose={() => {
-          setEditDialogOpen(false);
-          setSelectedChart(null);
-        }}
+        onClose={handleCloseEditDialog}
         onUpdateChart={handleUpdateChart}
         holdings={holdings}
       />
@@ -103,10 +116,7 @@ export const CategoryCharts: React.FC = () => {
       <DeleteCategoryChartDialog
         open={deleteDialogOpen}
         chart={selectedChart}
-        onClose={() => {
-          setDeleteDialogOpen(false);
-          setSelectedChart(null);
-        }}
+        onClose={handleCloseDeleteDialog}
         onDeleteChart={handleConfirmDelete}
       />
     </Box>

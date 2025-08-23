@@ -103,6 +103,62 @@ export class PriceService {
     return 'CURRENCY';
   }
 
+  /**
+   * Verilen bir tarihin BIST piyasa saatleri (UTC 07:00-15:10) içinde olup olmadığını kontrol eder.
+   * @param date Kontrol edilecek tarih nesnesi.
+   * @returns Piyasa açıksa true, değilse false.
+   */
+  public static isStockMarketHours(date: Date): boolean {
+    const day = date.getUTCDay(); // Pazar=0, Ctesi=6
+    const utcHour = date.getUTCHours();
+    const utcMinutes = date.getUTCMinutes();
+    
+    // Piyasa saatleri Turkey Time (UTC+3): 10:00 - 18:10 arası.
+    // UTC karşılığı: 07:00 - 15:10 arası.
+    return (
+      day > 0 && day < 6 && // Hafta içi mi?
+      (
+        (utcHour >= 7 && utcHour < 15) || // 07:00 - 14:59 UTC
+        (utcHour === 15 && utcMinutes <= 10) // 15:00 - 15:10 UTC
+      )
+    );
+  }
+
+  /**
+   * Bir fonun fiyat tarihinin, kontrol anına göre geçerli olup olmadığını belirler.
+   * Hafta içi, fiyat tarihi bugüne ait olmalıdır.
+   * Hafta sonu, fiyat tarihi son Cuma gününe aitse de geçerlidir.
+   * @param priceDate Fiyatın tarihi (YYYY-MM-DD formatında).
+   * @param today Kontrolün yapıldığı anın tarih nesnesi.
+   * @returns Fiyat tarihi geçerliyse true, değilse false.
+   */
+  public static isFundPriceDateValid(priceDate: string, today: Date): boolean {
+    const dayOfWeek = today.getDay(); // Pazar: 0, Cmt: 6
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    const getLocalDateString = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const todayString = getLocalDateString(today);
+
+    // Hafta içi: Fiyat tarihi kesinlikle bugün olmalı.
+    if (!isWeekend) {
+      return priceDate === todayString;
+    }
+
+    // Hafta sonu: Fiyat tarihi son Cuma gününe aitse de geçerlidir.
+    const lastFriday = new Date(today);
+    const daysToSubtract = dayOfWeek === 6 ? 1 : 2; // Cmt için 1, Pazar için 2 gün çıkar
+    lastFriday.setDate(today.getDate() - daysToSubtract);
+    const lastFridayString = getLocalDateString(lastFriday);
+    
+    return priceDate === lastFridayString;
+  }
+
   public static transformSymbol(symbol: string): string {
     const symbolMap: Record<string, string> = {
       'USDTRY': 'USDTRY=X',
@@ -139,31 +195,7 @@ export class PriceService {
         // Fonlar için önbelleğin geçerli sayılması için, verinin FİYAT TARİHİNİN bugüne ait olması gerekir.
         // Bu, TEFAS'ın bir gün önceki veriyi dönmesi durumunda önbelleğin kullanılmasını engeller.
         if (cachedData?.priceDate) {
-          const today = new Date();
-          const dayOfWeek = today.getDay(); // Pazar: 0, Cmt: 6
-          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-
-          const getLocalDateString = (date: Date): string => {
-            const year = date.getFullYear();
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            return `${year}-${month}-${day}`;
-          };
-
-          const todayString = getLocalDateString(today);
-
-          // Hafta içi: Fiyat tarihi kesinlikle bugün olmalı.
-          if (!isWeekend) {
-            return cachedData.priceDate === todayString;
-          }
-
-          // Hafta sonu: Fiyat tarihi son Cuma gününe aitse de geçerlidir.
-          const lastFriday = new Date(today);
-          const daysToSubtract = dayOfWeek === 6 ? 1 : 2; // Cmt için 1, Pazar için 2 gün çıkar
-          lastFriday.setDate(today.getDate() - daysToSubtract);
-          const lastFridayString = getLocalDateString(lastFriday);
-          
-          return cachedData.priceDate === lastFridayString;
+          return PriceService.isFundPriceDateValid(cachedData.priceDate, now);
         }
 
         // priceDate yoksa (eski veri veya başka bir sorun), standart gün kontrolü yap.
@@ -171,18 +203,7 @@ export class PriceService {
       }
   
       case 'STOCK': {
-        const day = now.getUTCDay(); // Pazar=0, Ctesi=6
-        const utcHour = now.getUTCHours();
-        const utcMinutes = now.getUTCMinutes();
-        
-        // Piyasa saatleri Turkey Time (UTC+3): 10:00 - 18:10 arası.
-        // UTC karşılığı: 07:00 - 15:10 arası.
-        const isMarketHours = 
-          day > 0 && day < 6 && // Hafta içi mi?
-          (
-            (utcHour >= 7 && utcHour < 15) || // 07:00 - 14:59 UTC
-            (utcHour === 15 && utcMinutes <= 10) // 15:00 - 15:10 UTC
-          );
+        const isMarketHours = PriceService.isStockMarketHours(now);
   
         if (isMarketHours) {
           // Piyasa açıkken: Kısa süreli önbellek (1 dk)

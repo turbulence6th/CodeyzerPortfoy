@@ -4,7 +4,7 @@ import type { PriceData, HistoricalPrice } from '../models/types';
 import { USE_MOCK_API } from '../utils/config';
 import { mockAxiosGet } from './mockApiService';
 
-type FundHistoryItem = {
+export type FundHistoryItem = {
   TARIH: string;
   FONKODU: string;
   FONUNVAN: string;
@@ -132,6 +132,74 @@ export class TefasService {
     }
   }
 
+  /**
+   * TEFAS'tan gelen ham geçmiş veriyi işleyerek standart bir PriceData nesnesine dönüştürür.
+   * - En güncel fiyatı bulur.
+   * - Eğer en güncel fiyat 0 ise veya o güne ait veri yoksa, bir önceki günün fiyatını kullanır.
+   * - Fiyatın hangi güne ait olduğunu priceDate alanında belirtir.
+   * @param history TEFAS API'sinden gelen, tarihe göre sıralanmamış ham veri dizisi.
+   * @param fundCode İşlem yapılan fonun kodu.
+   * @returns İşlenmiş PriceData nesnesi veya veri yetersizse null.
+   */
+  public static processFundHistory(history: FundHistoryItem[], fundCode: string): PriceData | null {
+    if (!history || history.length === 0) {
+      console.warn(`TEFAS: Veri bulunamadı (${fundCode})`);
+      return null;
+    }
+
+    // Tarihe göre en yeniden en eskiye doğru sırala
+    const sortedHistory = [...history].sort((a, b) => parseInt(b.TARIH) - parseInt(a.TARIH));
+
+    const latest = sortedHistory[0];
+    const previous = sortedHistory.length > 1 ? sortedHistory[1] : null;
+
+    // Kural: En güncel fiyat 0'dan büyükse onu kullan. Değilse, bir önceki günü kullan.
+    const usePreviousAsLatest = latest.FIYAT === 0 && previous;
+    const effectiveData = usePreviousAsLatest ? previous! : latest;
+    
+    // Değişim hesaplaması için kullanılacak olan, "effective" veriden bir önceki veri
+    const comparisonData = usePreviousAsLatest 
+      ? (sortedHistory.length > 2 ? sortedHistory[2] : null) // Eğer düne ait veriyi kullanıyorsak, evvelsi günle karşılaştır
+      : previous; // Eğer bugüne ait veriyi kullanıyorsak, dünle karşılaştır
+
+    const price = effectiveData.FIYAT;
+    if (typeof price !== 'number' || isNaN(price)) {
+      console.warn(`TEFAS: Fiyat geçersiz (${fundCode}):`, price);
+      return null;
+    }
+    
+    let change = 0;
+    let changePercent = 0;
+    let previousClose: number | undefined = undefined;
+    
+    if (comparisonData && typeof comparisonData.FIYAT === 'number' && comparisonData.FIYAT > 0) {
+      previousClose = comparisonData.FIYAT;
+      change = price - previousClose;
+      changePercent = (change / previousClose) * 100;
+    }
+
+    const historicalData: HistoricalPrice[] = sortedHistory
+      .map((item: FundHistoryItem) => ({
+        date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
+        price: item.FIYAT,
+      }))
+      .reverse();
+
+    const priceData: PriceData = {
+      symbol: fundCode,
+      price,
+      change,
+      changePercent,
+      previousClose,
+      lastUpdate: new Date().toISOString(),
+      name: effectiveData.FONUNVAN,
+      historicalData,
+      priceDate: new Date(parseInt(effectiveData.TARIH)).toISOString().split('T')[0],
+    };
+
+    return priceData;
+  }
+
   private async performSingleFundRequest(fundCode: string): Promise<PriceData | null> {
     const isDevelopment = import.meta.env.DEV;
     const endpoint = isDevelopment
@@ -160,84 +228,13 @@ export class TefasService {
             timeout: 15000,
           });
 
-      const apiResponse = response.data;
-      const items = apiResponse?.data;
-      if (!items || items.length === 0) {
-        console.warn(`TEFAS: Veri bulunamadı (${fundCode})`);
-        return null;
-      }
+      const items = response.data?.data;
+      const priceData = TefasService.processFundHistory(items || [], fundCode);
 
-      // Array tarihe göre yeni->eski sıralı (TARIH timestamp'i büyük olan en yeni)
-      // En yeni veriyi al
-      items.sort((a: FundHistoryItem, b: FundHistoryItem) => parseInt(b.TARIH) - parseInt(a.TARIH));
-      
-      // Fiyat 0 olsa bile en güncel veriyi alıyoruz.
-      // Fiyatın 0 olup olmadığını kontrol etme sorumluluğu priceService'e aittir.
-      const latest = items[0];
-      
-      console.log(`📊 TEFAS ${fundCode} Debug:`, {
-        tarih: new Date(parseInt(latest.TARIH)).toLocaleDateString('tr-TR'),
-        fiyat: latest.FIYAT,
-        fonUnvan: latest.FONUNVAN
-      });
-
-      const price = latest.FIYAT;
-      if (typeof price !== 'number' || isNaN(price)) {
-        console.warn(`TEFAS: Fiyat geçersiz (${fundCode}):`, price);
-        return null;
-      }
-
-      // Önceki gün fiyatı (varsa)
-      let change = 0;
-      let changePercent = 0;
-      let previousClose: number | undefined = undefined;
-
-      if (items.length >= 2) {
-        // Değişim hesaplaması için, geçerli fiyattan bir önceki fiyatı bul
-        const currentIndex = items.findIndex((item: FundHistoryItem) => item.TARIH === latest.TARIH);
-        let prevItem = null;
-        if (currentIndex !== -1 && currentIndex + 1 < items.length) {
-            prevItem = items[currentIndex + 1];
-        }
-
-        if (prevItem) {
-          const prevPrice = prevItem.FIYAT;
-          if (typeof prevPrice === 'number' && !isNaN(prevPrice) && prevPrice > 0) {
-            change = price - prevPrice;
-            changePercent = (change / prevPrice) * 100;
-            previousClose = prevPrice;
-          }
-        }
+      if (priceData) {
+        this.cache.set(fundCode, { data: priceData, timestamp: Date.now() });
       }
       
-      // Tüm geçmiş veriyi de ekle (eski->yeni sıralı)
-      const historicalData: HistoricalPrice[] = items
-        .map((item: FundHistoryItem) => ({
-          date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
-          price: item.FIYAT,
-        }))
-        .reverse(); // Grafikte doğru görünmesi için eski->yeni sırala
-
-      const priceData: PriceData = {
-        symbol: fundCode,
-        price,
-        change,
-        changePercent,
-        previousClose, // Önceki günün kapanış fiyatını ekle
-        lastUpdate: new Date().toISOString(),
-        name: latest.FONUNVAN,
-        historicalData,
-      };
-
-      // Fiyatın tarihini ekle. Eğer en güncel fiyat 0 ise ve bir önceki günün
-      // fiyatı mevcutsa, o fiyatın tarihini "etkin tarih" olarak kabul et.
-      const prevItem = items.length >= 2 ? items[1] : null;
-      const effectiveTarih = (price === 0 && prevItem) ? prevItem.TARIH : latest.TARIH;
-      if (effectiveTarih) {
-        priceData.priceDate = new Date(parseInt(effectiveTarih)).toISOString().split('T')[0];
-      }
-
-      this.cache.set(fundCode, { data: priceData, timestamp: Date.now() });
       return priceData;
     } catch (error) {
       console.error('TEFAS API hatası:', error);

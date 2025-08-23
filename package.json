@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest",
     "build": "tsc -b && vite build",
     "build:android": "npm run build && npx cap sync android",
     "lint": "eslint .",
@@ -12,6 +13,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^7.4.0",
+    "@capacitor/app": "^7.0.2",
     "@capacitor/cli": "^7.4.0",
     "@capacitor/core": "^7.4.0",
     "@emotion/cache": "^11.14.0",

@@ -7,6 +7,7 @@ import {
 import { MdAdd as AddIcon } from 'react-icons/md';
 import { useAppSelector, useAppDispatch } from '../hooks/redux';
 import { usePrices } from '../hooks/usePrices';
+import { useBackButton } from '../hooks/useBackButton';
 import { updateHolding, removeHolding, addHolding } from '../store/portfolioSlice';
 import { PortfolioSummary } from '../components/PortfolioSummary';
 import { HoldingsList } from '../components/HoldingsList';
@@ -39,6 +40,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedHolding, setSelectedHolding] = useState<Holding | null>(null);
+
+  // Geri tuşu yönetimi
+  const handleCloseEditDialog = () => {
+    setEditDialogOpen(false);
+    setSelectedHolding(null);
+  };
+
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setSelectedHolding(null);
+  };
+
+  useBackButton(() => setAddDialogOpen(false), addDialogOpen);
+  useBackButton(handleCloseEditDialog, editDialogOpen);
+  useBackButton(handleCloseDeleteDialog, deleteDialogOpen);
 
   const { totalValue, dailyChange } = holdings.reduce(
     (acc, holding) => {
@@ -145,20 +161,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
         <EditHoldingDialog
           open={editDialogOpen}
           holding={selectedHolding}
-          onClose={() => {
-            setEditDialogOpen(false);
-            setSelectedHolding(null);
-          }}
+          onClose={handleCloseEditDialog}
           onUpdateHolding={handleUpdateHolding}
         />
 
         <DeleteHoldingDialog
           open={deleteDialogOpen}
           holding={selectedHolding}
-          onClose={() => {
-            setDeleteDialogOpen(false);
-            setSelectedHolding(null);
-          }}
+          onClose={handleCloseDeleteDialog}
           onDeleteHolding={handleConfirmDelete}
         />
       </Box>
