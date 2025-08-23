@@ -77,25 +77,26 @@ export class PriceService {
   }
 
   public static getAssetTypeFromSymbol(symbol: string): AssetType {
-    // Kural: Fonlar 3 büyük harfli kodlardır. (Örn: YAS, IPJ)
-    // GAU (Gram Altın) ve XAG (Gümüş) gibi özel kodları hariç tutuyoruz.
-    if (symbol.length === 3 && symbol.toUpperCase() === symbol && !['GAU', 'XAG'].includes(symbol)) {
+    // Özel ve kesin listeler en önce kontrol edilmeli.
+    // Kural: Değerli metaller
+    // GAUTRY'yi önceliklendir, çünkü GAU bir fon koduyla çakışıyor.
+    if (['GAUTRY', 'XAUUSD'].includes(symbol)) {
+      return 'COMMODITY';
+    }
+
+    // Kural: Döviz çiftleri
+    if (['USDTRY', 'EURTRY', 'XAGTRY', 'TRY'].includes(symbol)) {
+      return 'CURRENCY';
+    }
+
+    // Kural: Fonlar 3 büyük harfli kodlardır. (Örn: YAS, IPJ, GAU)
+    if (symbol.length === 3 && symbol.toUpperCase() === symbol) {
       return 'FUND';
     }
   
     // Kural: BIST hisseleri ".IS" eki alır.
     if (PriceService.transformSymbol(symbol).endsWith('.IS')) {
       return 'STOCK';
-    }
-  
-    // Kural: Döviz çiftleri (özel durumlar hariç)
-    if (['USDTRY', 'EURTRY', 'XAGTRY'].includes(symbol)) {
-      return 'CURRENCY';
-    }
-  
-    // Kural: Değerli metaller
-    if (['GAU', 'GAUTRY', 'XAUUSD'].includes(symbol)) {
-      return 'COMMODITY';
     }
   
     // Varsayılan olarak CURRENCY döndür veya daha spesifik kurallar ekle
@@ -123,35 +124,51 @@ export class PriceService {
     return symbol;
   }
 
-  public isCacheValid(symbol: string, timestamp: number, isRefresh = false): boolean {
+  public isCacheValid(
+    symbol: string, 
+    timestamp: number, 
+    cachedData?: PriceData
+  ): boolean {
     const assetType = PriceService.getAssetTypeFromSymbol(symbol);
     const now = new Date();
     const cacheDate = new Date(timestamp);
-
-    // --- Manuel Yenileme Mantığı ---
-    if (isRefresh) {
-      // Döviz ve emtialar her zaman yenilenir.
-      if (assetType === 'CURRENCY' || assetType === 'COMMODITY') {
-        return false; 
-      }
-      // Hisseler sadece piyasa saatleri içindeyse yenilenir.
-      if (assetType === 'STOCK') {
-        const day = now.getUTCDay();
-        const utcHour = now.getUTCHours();
-        const utcMinutes = now.getUTCMinutes();
-        const isMarketHours = day > 0 && day < 6 && ((utcHour >= 7 && utcHour < 15) || (utcHour === 15 && utcMinutes <= 10));
-        if (isMarketHours) {
-          return false; // Piyasa açıksa, yenilemeye zorla.
-        }
-      }
-      // Fonlar ve piyasa dışı hisseler için yenileme talebi dikkate alınmaz,
-      // standart önbellek kontrolüne devam edilir.
-    }
-
+    
     // --- Standart Önbellek Geçerlilik Mantığı ---
     switch (assetType) {
-      case 'FUND':
+      case 'FUND': {
+        // Fonlar için önbelleğin geçerli sayılması için, verinin FİYAT TARİHİNİN bugüne ait olması gerekir.
+        // Bu, TEFAS'ın bir gün önceki veriyi dönmesi durumunda önbelleğin kullanılmasını engeller.
+        if (cachedData?.priceDate) {
+          const today = new Date();
+          const dayOfWeek = today.getDay(); // Pazar: 0, Cmt: 6
+          const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+          const getLocalDateString = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+
+          const todayString = getLocalDateString(today);
+
+          // Hafta içi: Fiyat tarihi kesinlikle bugün olmalı.
+          if (!isWeekend) {
+            return cachedData.priceDate === todayString;
+          }
+
+          // Hafta sonu: Fiyat tarihi son Cuma gününe aitse de geçerlidir.
+          const lastFriday = new Date(today);
+          const daysToSubtract = dayOfWeek === 6 ? 1 : 2; // Cmt için 1, Pazar için 2 gün çıkar
+          lastFriday.setDate(today.getDate() - daysToSubtract);
+          const lastFridayString = getLocalDateString(lastFriday);
+          
+          return cachedData.priceDate === lastFridayString;
+        }
+
+        // priceDate yoksa (eski veri veya başka bir sorun), standart gün kontrolü yap.
         return now.toDateString() === cacheDate.toDateString();
+      }
   
       case 'STOCK': {
         const day = now.getUTCDay(); // Pazar=0, Ctesi=6
@@ -179,13 +196,10 @@ export class PriceService {
   
       case 'CURRENCY':
       case 'COMMODITY':
-      default:
-        // GAUTRY anlık hesaplandığı için asla kendi önbelleğini kullanmaz.
-        if (symbol === 'GAU' || symbol === 'GAUTRY') {
-          return false;
-        }
-        // Diğer tüm varlıklar için: Standart kısa süreli önbellek
-        return now.getTime() - timestamp < this.CACHE_DURATION;
+      default: {
+        const isValid = now.getTime() - timestamp < this.CACHE_DURATION;
+        return isValid;
+      }
     }
   }
 
@@ -259,15 +273,11 @@ export class PriceService {
     }
   }
 
-  public async fetchSinglePrice(
-    symbol: string, 
-    isRefresh = false,
-    dependencies: { usdTryPrice?: PriceData } = {} // Bağımlılıklar için opsiyonel parametre
-  ): Promise<PriceData> {
+  public async fetchSinglePrice(symbol: string): Promise<PriceData> {
     // Önbellek kontrolü ve yönetimi artık usePrices hook'unda yapılıyor.
     // Bu servis sadece veri çekme ve işleme görevini üstlenir.
 
-    console.log(`[API] Fetching new data for ${symbol} (Refresh: ${isRefresh}).`);
+    console.log(`[API] Fetching new data for ${symbol}.`);
 
     if (symbol === 'TRY') {
       const tryData: PriceData = {
@@ -286,7 +296,7 @@ export class PriceService {
 
     // Gram Altın (GAU) için özel yönlendirme
     if (symbol === 'GAU' || symbol === 'GAUTRY') {
-      return this.fetchGoldPrice(symbol, dependencies.usdTryPrice || null);
+      return this.fetchGoldPrice(symbol);
     }
 
     if (symbol === 'XAUUSD' || symbol === 'XAUTRY') {
@@ -318,7 +328,7 @@ export class PriceService {
 
     // Altın için özel işlem: GC=F (ons altın USD) + USDTRY
     if (symbol === 'GAUTRY') {
-      return this.fetchGoldPrice(symbol, dependencies.usdTryPrice || null);
+      return this.fetchGoldPrice(symbol);
     }
 
     const transformedSymbol = PriceService.transformSymbol(symbol);
@@ -354,21 +364,20 @@ export class PriceService {
   }
 
   // Altın için özel çevrim: GC=F (ons altın USD) -> Gram altın TRY
-  private async fetchGoldPrice(
-    symbol: string,
-    usdTryResponse: PriceData | null // USDTRY fiyatını parametre olarak al
-  ): Promise<PriceData> {
+  private async fetchGoldPrice(symbol: string): Promise<PriceData> {
     try {
       // 1 ons = 31.1035 gram
       const OUNCE_TO_GRAM = 31.1035;
 
-      // Paralel olarak GEREKLİ OLMAYAN diğer verileri çek
+      // GAUTRY'nin bağımlılıklarını (anlık ons ve anlık/dünkü USDTRY) paralel çek
       const [
         ounceUsdSwissquoteResponse,
         ounceUsdYahooResponse,
+        usdTryResponse, // -> USDTRY artık burada çekiliyor
       ] = await Promise.all([
         this.fetchSwissquotePrice('XAUUSD'),
         this.fetchYahooPrice('GC=F'), // Dünkü ons fiyatı için Yahoo'yu kullan
+        this.fetchYahooPrice('USDTRY=X'), // Anlık USDTRY için Yahoo'yu kullan
       ]);
 
       // Gelen verilerin geçerliliğini kontrol et

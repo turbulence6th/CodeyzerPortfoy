@@ -21,7 +21,7 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
   const priceCacheRef = useRef(priceCache);
   priceCacheRef.current = priceCache;
 
-  const fetchPrices = useCallback(async (isRefresh = false) => {
+  const fetchPrices = useCallback(async () => {
     if (holdings.length === 0) return;
 
     const uniqueSymbols = [...new Set(holdings.map(h => h.symbol))];
@@ -42,33 +42,19 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
     const tefasManager = new RequestManager<PriceData | null>(1, onPriceUpdate);
     const yahooManager = new RequestManager<PriceData | null>(4, onPriceUpdate);
 
-    // GAUTRY'yi ve bağımlılığı olan USDTRY'yi ayır
-    const gautrySymbols = uniqueSymbols.filter(s => s === 'GAU' || s === 'GAUTRY');
-    let otherSymbols = uniqueSymbols.filter(s => s !== 'GAU' && s !== 'GAUTRY');
-
-    // GAUTRY varsa, bağımlılığı olan USDTRY'nin de ilk pass'ta istendiğinden emin ol
-    if (gautrySymbols.length > 0 && !otherSymbols.includes('USDTRY')) {
-      otherSymbols.push('USDTRY');
-    }
-
-    // --- 1. Aşama: GAUTRY dışındaki tüm varlıkları çek ---
-    for (const symbol of otherSymbols) {
+    // Tüm semboller artık tek bir listede, özel bir ayrım yok.
+    for (const symbol of uniqueSymbols) {
       const type = PriceService.getAssetTypeFromSymbol(symbol);
       const cachedItem = priceCacheRef.current[symbol];
       
-      let useCache = false;
-      if (cachedItem) {
-        if (!isRefresh && (type === 'CURRENCY' || type === 'COMMODITY')) {
-          useCache = false;
-        } else {
-          useCache = priceService.isCacheValid(symbol, cachedItem.timestamp, isRefresh);
-        }
-      }
+      const useCache = cachedItem 
+        ? priceService.isCacheValid(symbol, cachedItem.timestamp, cachedItem.data)
+        : false;
  
       if (useCache) {
         dispatch(updatePriceData({ ...cachedItem.data, source: 'cache' }));
       } else {
-        const requestFn = () => priceService.fetchSinglePrice(symbol, isRefresh);
+        const requestFn = () => priceService.fetchSinglePrice(symbol);
         if (type === 'FUND') {
           tefasManager.add(requestFn, symbol);
         } else {
@@ -78,24 +64,8 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
     }
  
     try {
-      // Önce bağımlılıkların (USDTRY dahil) tamamlanmasını bekle
+      // Tüm isteklerin (GAUTRY dahil) tamamlanmasını bekle
       await Promise.all([tefasManager.start(), yahooManager.start()]);
- 
-      // --- 2. Aşama: GAUTRY'yi güncel USDTRY ile hesapla ---
-      if (gautrySymbols.length > 0) {
-        const usdTryCache = priceCacheRef.current['USDTRY']; // Cache şimdi güncel
-        if (!usdTryCache) {
-          console.error("GAUTRY hesaplaması için USDTRY bulunamadı!");
-          throw new Error("USDTRY verisi alınamadı.");
-        }
- 
-        for (const symbol of gautrySymbols) {
-          const priceData = await priceService.fetchSinglePrice(symbol, isRefresh, { 
-            usdTryPrice: usdTryCache.data 
-          });
-          onPriceUpdate(priceData); // Sonucu işle
-        }
-      }
  
       dispatch(fetchPricesSuccess());
     } catch (err) {
@@ -106,11 +76,11 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
   }, [holdings, dispatch]);
 
   useEffect(() => {
-    fetchPrices(false);
+    fetchPrices();
   }, [fetchPrices]);
   
   const refreshPrices = useCallback(() => {
-    fetchPrices(true);
+    fetchPrices();
   }, [fetchPrices]);
 
   return { refreshPrices };
