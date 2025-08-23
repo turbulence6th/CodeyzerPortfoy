@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -7,13 +7,25 @@ import {
   Grid,
   Alert,
   Snackbar,
+  Switch,
+  FormControlLabel,
+  Divider,
 } from '@mui/material';
 import { useAppDispatch } from '../hooks/redux';
 import { clearPriceCache } from '../store/portfolioSlice';
+import { useTheme } from '../contexts/ThemeContext';
 
 export function Settings() {
   const dispatch = useAppDispatch();
   const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState<boolean>(() => {
+    return JSON.parse(localStorage.getItem('isBiometricEnabled') || 'false');
+  });
+  const { isDarkMode, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    localStorage.setItem('isBiometricEnabled', JSON.stringify(isBiometricEnabled));
+  }, [isBiometricEnabled]);
 
   const handleClearCache = () => {
     dispatch(clearPriceCache());
@@ -34,6 +46,51 @@ export function Settings() {
       </Typography>
 
       <Paper sx={{ p: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 8 }}>
+            <Typography variant="h6">Koyu Tema</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Uygulamanın görsel temasını açık veya koyu olarak değiştirin.
+            </Typography>
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { md: 'right' } }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isDarkMode}
+                  onChange={toggleTheme}
+                />
+              }
+              label={isDarkMode ? 'Aktif' : 'Pasif'}
+            />
+          </Grid>
+        </Grid>
+
+        <Divider sx={{ my: 2 }} />
+        
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 8 }}>
+            <Typography variant="h6">Uygulama Kilidi</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Uygulamayı açarken parmak izi veya yüz tanıma ile koruma sağlayın.
+              (Cihazınızın desteklemesi gerekmektedir)
+            </Typography>
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }} sx={{ textAlign: { md: 'right' } }}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isBiometricEnabled}
+                  onChange={(e) => setIsBiometricEnabled(e.target.checked)}
+                />
+              }
+              label={isBiometricEnabled ? 'Aktif' : 'Pasif'}
+            />
+          </Grid>
+        </Grid>
+
+        <Divider sx={{ my: 2 }} />
+        
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, md: 8 }}>
             <Typography variant="h6">Fiyat Önbelleği</Typography>

@@ -3,7 +3,6 @@ import {
   AppBar,
   Toolbar,
   Typography,
-  IconButton,
   Box,
   Container,
   BottomNavigation,
@@ -11,15 +10,19 @@ import {
   Paper,
 } from '@mui/material';
 import {
-  MdBrightness4 as Brightness4,
-  MdBrightness7 as Brightness7,
   MdAccountBalance as AccountBalance,
   MdDashboard as Dashboard,
   MdBarChart as BarChart,
   MdSettings as SettingsIcon,
 } from 'react-icons/md';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useTheme } from '../contexts/ThemeContext';
+import { useAppSelector } from '../hooks/redux';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import 'dayjs/locale/tr';
+
+dayjs.extend(relativeTime);
+dayjs.locale('tr');
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -28,9 +31,9 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ 
   children, 
 }) => {
-  const { isDarkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+  const { lastUpdate, lastUpdateStats } = useAppSelector((state) => state.portfolio);
 
   const getCurrentTab = () => {
     switch (location.pathname) {
@@ -63,20 +66,34 @@ export const Layout: React.FC<LayoutProps> = ({
     <Box sx={{ flexGrow: 1, pb: 10 }}>
       <AppBar position="static" elevation={2}>
         <Toolbar>
-          <Box sx={{ mr: 2, display: 'flex' }}>
-            <AccountBalance size={24} />
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+              <AccountBalance size={24} />
+            </Box>
+            <Typography variant="h6" component="div" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              Codeyzer Portföy
+            </Typography>
           </Box>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Codeyzer Portföy
-          </Typography>
-          
-          <IconButton
-            color="inherit"
-            onClick={toggleTheme}
-            title={isDarkMode ? 'Açık tema' : 'Koyu tema'}
-          >
-            {isDarkMode ? <Brightness7 /> : <Brightness4 />}
-          </IconButton>
+
+          <Box sx={{ flexGrow: 1 }} />
+
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {lastUpdate && (
+              <Box sx={{ mr: 1, textAlign: 'right' }}>
+                <Typography variant="caption" component="div" sx={{ lineHeight: 1.2, fontSize: '0.7rem' }}>
+                  Son Güncelleme
+                </Typography>
+                <Typography variant="caption" component="div" sx={{ fontWeight: 'bold', lineHeight: 1.2, fontSize: '0.75rem' }}>
+                  {dayjs(lastUpdate).format('D MMM, HH:mm')}
+                </Typography>
+                {lastUpdateStats && lastUpdateStats.total > 0 && (
+                  <Typography variant="caption" component="div" sx={{ lineHeight: 1.1, fontSize: '0.65rem', opacity: 0.8 }}>
+                    ({lastUpdateStats.live} anlık, {lastUpdateStats.cached} önbellekten)
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Box>
         </Toolbar>
       </AppBar>
 

@@ -27,8 +27,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
     holdings, 
     prices, 
     loading, 
-    error,
-    lastUpdate 
   } = useAppSelector((state) => state.portfolio);
   const categoryCharts = useAppSelector((state) => state.category.charts);
 
@@ -119,10 +117,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
             totalValue={totalValue}
             dailyChange={dailyChange}
             dailyChangePercent={finalDailyChangePercent}
-            holdingsCount={holdings.length}
             loading={loading}
-            error={error}
-            lastUpdate={lastUpdate}
           />
 
           {/* Portföy Detayları */}

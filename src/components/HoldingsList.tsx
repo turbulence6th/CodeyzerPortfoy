@@ -353,7 +353,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
                   backgroundColor: 'primary.main',
                   color: 'primary.contrastText',
                   '& .MuiAccordionSummary-content': { alignItems: 'center' },
-                  '&:hover': { backgroundColor: 'primary.dark' }
+                  '&:hover': { backgroundColor: 'primary.main' }
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mr: { xs: 0, sm: 2 } }}>

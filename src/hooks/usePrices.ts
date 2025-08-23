@@ -8,6 +8,7 @@ import {
   fetchPricesError,
   updatePriceData,
   setPriceCacheItem,
+  setLastUpdateStats,
 } from '../store/portfolioSlice';
 import type { Holding, PriceData } from '../models/types';
 
@@ -42,6 +43,9 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
     const tefasManager = new RequestManager<PriceData | null>(1, onPriceUpdate);
     const yahooManager = new RequestManager<PriceData | null>(4, onPriceUpdate);
 
+    let cachedCount = 0;
+    const liveSymbols: string[] = [];
+
     // Tüm semboller artık tek bir listede, özel bir ayrım yok.
     for (const symbol of uniqueSymbols) {
       const type = PriceService.getAssetTypeFromSymbol(symbol);
@@ -53,7 +57,9 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
  
       if (useCache) {
         dispatch(updatePriceData({ ...cachedItem.data, source: 'cache' }));
+        cachedCount++;
       } else {
+        liveSymbols.push(symbol);
         const requestFn = () => priceService.fetchSinglePrice(symbol);
         if (type === 'FUND') {
           tefasManager.add(requestFn, symbol);
@@ -64,6 +70,13 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
     }
  
     try {
+      // Fiyat güncelleme istatistiklerini ayarla
+      dispatch(setLastUpdateStats({
+        live: liveSymbols.length,
+        cached: cachedCount,
+        total: uniqueSymbols.length,
+      }));
+      
       // Tüm isteklerin (GAUTRY dahil) tamamlanmasını bekle
       await Promise.all([tefasManager.start(), yahooManager.start()]);
  

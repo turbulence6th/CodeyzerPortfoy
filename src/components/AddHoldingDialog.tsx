@@ -166,6 +166,23 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
   };
 
   const handleClose = () => {
+    // Başarı durumunda formu sıfırlamadan sadece kapat
+    if (success) {
+      onClose();
+      // Gecikmeli sıfırlama, kapanma animasyonunun bitmesini bekler
+      setTimeout(() => {
+        setType('CURRENCY');
+        setSymbol('');
+        setAmount('');
+        setNote('');
+        setError('');
+        setSuccess('');
+        setValidating(false);
+      }, 300);
+      return;
+    }
+
+    // Normal kapatma/iptal durumu
     setType('CURRENCY');
     setSymbol('');
     setAmount('');
@@ -207,6 +224,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                 value={type}
                 onChange={(e) => setType(e.target.value as AssetType)}
                 helperText={assetTypes.find(t => t.value === type)?.examples}
+                disabled={success !== ''}
               >
                 {assetTypes.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
@@ -223,6 +241,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                 options={getCurrentSymbols()}
                 value={symbol}
                 onInputChange={(_, newValue) => setSymbol(newValue || '')}
+                disabled={success !== ''}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -254,6 +273,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                   'Fon pay adedi'
                 }
                 required
+                disabled={success !== ''}
               />
             </Grid>
 
@@ -267,6 +287,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Bu varlık hakkında notlarınız..."
+                disabled={success !== ''}
               />
             </Grid>
           </Grid>
@@ -274,7 +295,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={handleClose}>İptal</Button>
+        <Button onClick={handleClose}>{success ? 'Kapat' : 'İptal'}</Button>
         <Button
           variant="contained"
           onClick={handleSave}

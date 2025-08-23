@@ -17,6 +17,12 @@ interface PortfolioState {
   /** Hangi sembollerin fiyatının güncellendiğini takip eder */
   updatingSymbols: string[];
   lastUpdate: string | null;
+  /** Son güncellemenin istatistikleri */
+  lastUpdateStats: {
+    live: number;
+    cached: number;
+    total: number;
+  } | null;
 }
 
 const initialState: PortfolioState = {
@@ -27,6 +33,7 @@ const initialState: PortfolioState = {
   error: null,
   updatingSymbols: [],
   lastUpdate: null,
+  lastUpdateStats: null,
 };
 
 const portfolioSlice = createSlice({
@@ -95,6 +102,11 @@ const portfolioSlice = createSlice({
       state.priceCache[action.payload.symbol] = action.payload.item;
     },
 
+    // Fiyat güncelleme istatistiklerini ayarla
+    setLastUpdateStats: (state, action:PayloadAction<{ live: number; cached: number; total: number }>) => {
+      state.lastUpdateStats = action.payload;
+    },
+
     // Fiyat önbelleğini temizle
     clearPriceCache: (state) => {
       state.priceCache = {};
@@ -112,6 +124,7 @@ export const {
   updatePriceData,
   clearError,
   setPriceCacheItem,
+  setLastUpdateStats,
   clearPriceCache,
 } = portfolioSlice.actions;
 
