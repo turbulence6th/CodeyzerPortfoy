@@ -14,8 +14,10 @@
   "dependencies": {
     "@capacitor/android": "^7.4.0",
     "@capacitor/app": "^7.0.2",
+    "@capacitor/app-launcher": "^7.0.2",
     "@capacitor/cli": "^7.4.0",
     "@capacitor/core": "^7.4.0",
+    "@capacitor/filesystem": "^7.1.4",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",

@@ -23,6 +23,8 @@ interface PortfolioState {
     cached: number;
     total: number;
   } | null;
+  /** Kullanıcının manuel girdiği toplam borç tutarı */
+  totalDebt: number;
 }
 
 const initialState: PortfolioState = {
@@ -34,6 +36,7 @@ const initialState: PortfolioState = {
   updatingSymbols: [],
   lastUpdate: null,
   lastUpdateStats: null,
+  totalDebt: 0,
 };
 
 const portfolioSlice = createSlice({
@@ -107,9 +110,19 @@ const portfolioSlice = createSlice({
       state.lastUpdateStats = action.payload;
     },
 
+    // Toplam borç tutarını ayarla
+    setTotalDebt: (state, action: PayloadAction<number>) => {
+      state.totalDebt = action.payload;
+    },
+
     // Fiyat önbelleğini temizle
     clearPriceCache: (state) => {
       state.priceCache = {};
+    },
+    
+    // Tüm state'i geri yükle
+    restorePortfolioState: (_state, action: PayloadAction<PortfolioState>) => {
+      return action.payload;
     },
   },
 });
@@ -125,7 +138,9 @@ export const {
   clearError,
   setPriceCacheItem,
   setLastUpdateStats,
+  setTotalDebt,
   clearPriceCache,
+  restorePortfolioState,
 } = portfolioSlice.actions;
 
 export default portfolioSlice.reducer; 

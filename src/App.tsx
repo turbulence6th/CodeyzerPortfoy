@@ -1,15 +1,18 @@
 import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
+import type { URLOpenListenerEvent } from '@capacitor/app';
+import type { PluginListenerHandle } from '@capacitor/core';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { CategoryCharts } from './pages/CategoryCharts';
 import { Settings } from './pages/Settings';
-import { useAppSelector } from './hooks/redux';
+import { useAppSelector, useAppDispatch } from './hooks/redux';
 import { usePrices } from './hooks/usePrices';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
 import { Box, CircularProgress } from '@mui/material';
+import { setTotalDebt } from './store/portfolioSlice';
 
 function AppContent() {
   const holdings = useAppSelector(state => state.portfolio.holdings);
@@ -33,19 +36,43 @@ function AppContent() {
 
 function AuthGuard() {
   const { isAuthenticated, isLoading, isBiometricEnabled, verifyIdentity, error, lockApp } = useAuth();
+  const dispatch = useAppDispatch();
 
   useEffect(() => {
-    // Uygulama arka plandan tekrar açıldığında kilitle
-    CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-      if (!isActive && isBiometricEnabled) {
-        lockApp();
-      }
+    const addListeners = async () => {
+      const stateListener = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (!isActive && isBiometricEnabled) {
+          lockApp();
+        }
+      });
+
+      const urlListener = await CapacitorApp.addListener('appUrlOpen', (event: URLOpenListenerEvent) => {
+        const url = new URL(event.url);
+        if (url.hostname === 'borc-geldi') {
+          const debtAmount = parseFloat(url.searchParams.get('tutar') || '0');
+          if (!isNaN(debtAmount)) {
+            dispatch(setTotalDebt(debtAmount));
+          }
+        }
+      });
+
+      return { stateListener, urlListener };
+    };
+
+    let listeners: {
+      stateListener: PluginListenerHandle;
+      urlListener: PluginListenerHandle;
+    } | undefined;
+
+    addListeners().then(handles => {
+      listeners = handles;
     });
 
     return () => {
-      CapacitorApp.removeAllListeners();
+      listeners?.stateListener.remove();
+      listeners?.urlListener.remove();
     };
-  }, [isBiometricEnabled, lockApp]);
+  }, [isBiometricEnabled, lockApp, dispatch]);
 
   if (isLoading) {
     return (

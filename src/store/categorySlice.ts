@@ -126,6 +126,11 @@ const categorySlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+
+    // Tüm state'i geri yükle
+    restoreCategoryState: (_state, action: PayloadAction<CategoryState>) => {
+      return action.payload;
+    },
   },
 });
 
@@ -142,6 +147,7 @@ export const {
   setLoading,
   setError,
   clearError,
+  restoreCategoryState,
 } = categorySlice.actions;
 
 export default categorySlice.reducer; 

@@ -10,6 +10,7 @@ interface PortfolioSummaryProps {
   dailyChange: number;
   dailyChangePercent: number;
   loading: boolean;
+  totalDebt: number;
 }
 
 export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
@@ -17,42 +18,67 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
   dailyChange,
   dailyChangePercent,
   loading,
+  totalDebt,
 }) => {
   const isPositiveChange = dailyChange >= 0;
+  const netWorth = totalValue - totalDebt;
 
   return (
     <>
       {/* Toplam Değer Kartı */}
-      <Grid size={{ xs: 12 }}>
+      <Grid size={{ xs: 12, md: 6 }}>
         <Paper sx={{ 
           p: 2, 
           textAlign: 'center', 
-          height: '120px', 
+          height: '100%', 
           display: 'flex', 
           flexDirection: 'column', 
           justifyContent: 'center',
           overflow: 'hidden'
         }}>
-          <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 1 }}>
-            Toplam Değer
+          <Typography variant="h6" color="text.primary" sx={{ mb: 2 }}>
+            Net Varlık Durumu
           </Typography>
-          <Typography 
-            variant="h5" 
-            color="primary" 
-            fontWeight="bold"
+          <Box 
             sx={{ 
-              fontSize: { xs: '1.25rem', sm: '1.5rem' },
-              lineHeight: 1.2,
-              wordBreak: 'break-word'
+              display: 'flex', 
+              justifyContent: 'space-around', 
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 1
             }}
           >
-            ₺{totalValue.toLocaleString('tr-TR', { 
-              minimumFractionDigits: 0,
-              maximumFractionDigits: 0 
-            })}
-          </Typography>
+            {/* Anapara */}
+            <Box>
+              <Typography variant="caption" color="text.secondary">TOPLAM VARLIKLAR</Typography>
+              <Typography variant="h6" fontWeight="medium">
+                ₺{totalValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+              </Typography>
+            </Box>
+            
+            <Typography variant="h5" color="text.secondary">-</Typography>
+            
+            {/* Borç */}
+            <Box>
+              <Typography variant="caption" color="text.secondary">TOPLAM BORÇ</Typography>
+              <Typography variant="h6" fontWeight="medium">
+                ₺{totalDebt.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+              </Typography>
+            </Box>
+
+            <Typography variant="h5" color="primary">=</Typography>
+
+            {/* Net Para */}
+            <Box>
+              <Typography variant="caption" color="text.secondary">NET VARLIK</Typography>
+              <Typography variant="h5" color="primary" fontWeight="bold">
+                ₺{netWorth.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+              </Typography>
+            </Box>
+          </Box>
+          
           { !loading && (
-            <Box sx={{ mt: 0.5 }}>
+            <Box sx={{ mt: 2 }}>
               <Typography 
                 variant="body2" 
                 fontWeight="medium"
