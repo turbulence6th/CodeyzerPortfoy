@@ -209,9 +209,19 @@ export class PriceService {
           // Piyasa açıkken: Kısa süreli önbellek (1 dk)
           return now.getTime() - timestamp < this.CACHE_DURATION;
         } else {
-          // Piyasa kapalıyken: Günlük önbellek
-          // Önbellek tarihinin bugünün tarihiyle aynı olması yeterli.
-          return now.toDateString() === cacheDate.toDateString();
+          // Piyasa kapalıyken:
+          const cacheWasDuringMarketHours = PriceService.isStockMarketHours(cacheDate);
+          const sameDay = now.toDateString() === cacheDate.toDateString();
+
+          // Eğer piyasa yeni kapandıysa ve önbellek piyasa açıkken oluşturulduysa,
+          // kapanış verisini çekmek için önbelleği bir kereliğine geçersiz kıl.
+          if (sameDay && cacheWasDuringMarketHours) {
+            return false; // Kapanış verisi için önbelleği geçersiz kıl
+          }
+
+          // Aksi halde (önbellek zaten piyasa kapalıyken oluşturulduysa veya başka bir gün ise),
+          // sadece gün kontrolü yap.
+          return sameDay;
         }
       }
   
