@@ -122,8 +122,10 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
     }
 
     const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setError('Geçerli bir miktar giriniz');
+    const isTry = symbol.toUpperCase().trim() === 'TRY';
+
+    if (isNaN(amountNum) || (isTry ? amountNum === 0 : amountNum <= 0)) {
+      setError(isTry ? 'Miktar 0 olamaz' : 'Geçerli bir miktar giriniz (0\'dan büyük)');
       return;
     }
 
@@ -266,7 +268,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                inputProps={{ min: 0, step: 'any' }}
+                inputProps={{ step: 'any' }}
                 helperText={
                   type === 'CURRENCY' ? 'Döviz miktarı' :
                   type === 'STOCK' ? 'Hisse adedi' :
