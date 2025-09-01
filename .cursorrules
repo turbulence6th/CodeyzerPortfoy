@@ -1,176 +1,143 @@
-Aşağıda "Codeyzer Portfoy" adlı; gram altın, gram gümüş, döviz, fonlar ve hisse senetlerini içeren, anlık fiyatları çekip toplam portföy değerini ve varlık kırılımlarını gösteren bir React + TypeScript + Material-UI uygulamasını sıfırdan geliştirmek için ayrıntılı bir yol haritası bulacaksınız.
+Aşağıda "Codeyzer Portfoy" adlı; gram altın, gram gümüş, döviz, fonlar, emtialar ve hisse senetlerini içeren, anlık fiyatları çekip toplam portföy değerini ve varlık kırılımlarını gösteren bir React + TypeScript + Capacitor + Material-UI uygulamasını açıklayan güncel yol haritası bulunmaktadır.
 
 ────────────────────────────
-1. İhtiyaçların Netleştirilmesi
+1. İhtiyaçların Netleştirilmesi (Güncel Durum)
 ────────────────────────────
-• Desteklenecek varlık türleri  
-  – Gram Altın (GAU)  
-  – Gram Gümüş (XAG/TRY)  
-  – Döviz (USD/TRY, EUR/TRY, GAU/TRY, XAG/TRY)  
-  – Borsa Yatırım Fonları (ör. TEFAS kodu)  
+• Desteklenen Varlık Türleri
+  – Gram Altın (GAU)
+  – Gram Gümüş (XAG/TRY)
+  – Döviz (USD/TRY, EUR/TRY)
+  – Emtia (örn. Gümüş)
+  – Borsa Yatırım Fonları (TEFAS kodu)
   – Hisse Senetleri (BIST kodu)
 
-• Kullanıcı İşlevleri  
-  1. Varlık ekleme / silme / güncelleme  
-  2. Anlık fiyatları otomatik çekme (manuel "Güncelle" butonu da)  
-  3. Portföy toplam değeri ve yüzde dağılımı  
-  4. Varlık bazlı detay sayfası  
-  5. Verilerin LocalStorage'da saklanması (opsiyonel backend)
+• Ana İşlevler
+  1. Varlık ekleme / silme / güncelleme
+  2. Anlık fiyatları otomatik çekme (manuel "Güncelle" butonu da)
+  3. Portföy toplam değeri ve yüzde dağılımı
+  4. Varlık bazlı detay ve not ekleme
+  5. Kategori bazlı grafikler oluşturma
+  6. Verilerin LocalStorage'da saklanması
+  7. Biyometrik kimlik doğrulama (Mobil)
 
-• Teknik Gereksinimler  
-  – React 18 + TypeScript  
-  – Material-UI (MUI v5)  
-  – Grafik için Recharts veya MUI X Charts  
-  – Fiyat verisi için REST API (örn. Yahoo Finance, Alpha Vantage, FinanceData, goldapi.io)  
-  – Fiyat verisi: Yahoo Finance (ücretsiz, anahtar gerektirmez) + TEFAS RSS (fon fiyatı)  
-  – State yönetimi: Redux Toolkit  
-  – State yönetimi: Redux Toolkit + redux-persist (veri kalıcılığı için)  
-  – Birim testleri: Vitest / Jest + React Testing Library
+• Teknik Gereksinimler
+  – Platform: Web (Vite) + Mobil (Capacitor)
+  – React 18 + TypeScript
+  – Material-UI (MUI v5)
+  – Grafikler için: Recharts
+  – Fiyat Verisi: Yahoo Finance (ücretsiz) + TEFAS RSS (fonlar)
+  – State Yönetimi: Redux Toolkit, Redux Persist, Listener Middleware
+  – Test: Vitest, React Testing Library, MSW (Mock Service Worker)
+  – Routing: React Router DOM
 
 ────────────────────────────
 2. Fiyat API'sini Seçme & Prototip
 ────────────────────────────
-• Altın/Gümüş/Döviz/Hisse: Yahoo Finance quote/chart uçları (ücretsiz, 15 dk gecikmeli)  
-• Fon: TEFAS RSS (fon)  
-• Seçilen çözüm: Yahoo Finance (tüm varlıklar) + TEFAS RSS (fon). API anahtarı gerekmez.  
-• Bir Postman/Insomnia oturumunda endpoint'leri test ederek veri formatlarını doğrulayın.  
-• Hata payını azaltmak için response'ları TypeScript interface'lerinde modelleyin.
+• Altın/Gümüş/Döviz/Hisse: Yahoo Finance quote/chart uçları (ücretsiz, 15 dk gecikmeli)
+• Fon: TEFAS RSS (fon)
+• Seçilen çözüm: Yahoo Finance (tüm varlıklar) + TEFAS RSS (fon). API anahtarı gerekmez.
+• Hata payını azaltmak için response'lar TypeScript interface'lerinde modellenmiştir.
 
 ────────────────────────────
-3. Proje Kurulumu
+3. Proje Kurulumu (Mevcut Durum)
 ────────────────────────────
-1) Yeni proje:  
-   # Proje kök dizininde oluştur   
-   npx create-vite@latest . --template react-ts  
-   npm install @mui/material @mui/icons-material @emotion/react @emotion/styled axios recharts dayjs  
-   npm install --save-dev eslint prettier vitest @testing-library/react
+1) Kurulan Ana Bağımlılıklar:
+   npm install @mui/material @emotion/react @emotion/styled axios recharts dayjs @reduxjs/toolkit react-redux redux-persist react-router-dom uuid
+   npm install @capacitor/core @capacitor/android
+   npm install --save-dev vitest @testing-library/react msw
 
-2) Klasör yapısı önerisi  
-src/  
-  api/           → REST çağrıları  
-  components/    → UI bileşenleri  
-  contexts/      → ThemeContext  
-  store/         → Redux store, slices  
-  hooks/         → usePrices, useLocalStorage  
-  models/        → TypeScript tipleri  
-  pages/         → Dashboard, Settings  
-  utils/         → yardımcı fonksiyonlar  
+2) Klasör Yapısı:
+src/
+  api/           → REST çağrıları (priceService, tefasService)
+  components/    → UI bileşenleri (HoldingsList, PortfolioSummary vb.)
+  contexts/      → ThemeContext, AuthContext
+  store/         → Redux store, portfolioSlice, categorySlice
+  hooks/         → usePrices, useBackButton
+  models/        → TypeScript tipleri (types.ts)
+  pages/         → Dashboard, Settings, CategoryCharts
+  utils/         → Yardımcı fonksiyonlar
   App.tsx, main.tsx
 
 ────────────────────────────
-4. Temel Altyapı
+4. Temel Altyapı ve Veri Modelleri (Güncel)
 ────────────────────────────
-• MUI ThemeProvider + createTheme ile koyu/açık tema  
-• React Router (opsiyonel) → / (dashboard) ve /settings rotaları  
-• Redux store (configureStore) + portfolioSlice  
-• Global PortföyContext  
-+• (Opsiyonel) ThemeContext Provider  
+• MUI ThemeProvider + createTheme ile koyu/açık tema.
+• React Router ile / (dashboard), /charts, /settings rotaları.
+• Güncel Veri Modelleri (`src/models/types.ts`):
+
   ```ts
-  interface Holding {
+  // Varlık Tipi
+  export type AssetType = 'CURRENCY' | 'FUND' | 'STOCK' | 'COMMODITY';
+
+  // Temel Varlık Birimi
+  export interface Holding {
     id: string;            // uuid
-    type: 'CURRENCY' | 'FUND' | 'STOCK';
+    type: AssetType;       // Varlık türü
     symbol: string;        // USDTRY, EURTRY, GAUTRY, XAGTRY, ISCTR
+    name: string;          // Görünen ad
     amount: number;        // adet / gram
+    note?: string;         // opsiyonel not
+    createdAt: string;     // Oluşturma tarihi
+    updatedAt: string;     // Güncelleme tarihi
   }
-  interface PortfolioState { holdings: Holding[] }
+
+  // Kategori Yapısı
+  export interface Category {
+    id: string;
+    name: string;
+    color: string;
+    holdingIds: string[]; // Bu kategoriye dahil varlık id'leri
+  }
+
+  // Kategori Grafiği Yapısı
+  export interface CategoryChart {
+    id: string;
+    name: string;
+    description?: string;
+    categories: Category[];
+  }
   ```
-
-────────────────────────────
-4.1. Material-UI Grid API Kullanımı (Güncel)
-────────────────────────────
-• MUI Grid'in YENİ API'sini kullan (eski item prop'u DEĞİL!)
-• ❌ ESKİ: `<Grid item xs={12} md={4}>`
-• ✅ YENİ: `<Grid size={{ xs: 12, md: 4 }}>`
-
-Örnekler:
-```tsx
-// Temel container + items
-<Grid container spacing={2}>
-  <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-    <Card>Content</Card>
-  </Grid>
-  <Grid size={{ xs: 12, sm: 6, md: 8 }}>
-    <Card>Content</Card>
-  </Grid>
-</Grid>
-
-// Responsive breakpoints
-<Grid container spacing={{ xs: 1, sm: 2, md: 3 }}>
-  <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }}>
-    <Item>Responsive Item</Item>
-  </Grid>
-</Grid>
-
-// Auto sizing
-<Grid container spacing={2}>
-  <Grid size="auto">Fixed width content</Grid>
-  <Grid size="grow">Flexible content</Grid>
-  <Grid size={4}>4 columns</Grid>
-</Grid>
-```
-
-• Container props: `container`, `spacing`, `columns`, `direction`
-• Item props: `size`, `offset` (eski xs, sm, md, lg, xl props YOK!)
-• size değerleri: number (1-12), "auto", "grow", object { xs: 12, md: 6 }
 
 ────────────────────────────
 5. Fiyat Servisi
 ────────────────────────────
-• api/priceService.ts  
-  – Axios ile Yahoo Finance '/v7/finance/quote?symbols=' veya '/v8/finance/chart' uçlarına GET isteği  
-  – 5-10 saniyelik polling ya da manuel refresh  
-  – Caching ve error handling (retry/backoff)  
-• hook: usePrices(symbols[]) → { data, loading, error }
+• `api/priceService.ts` ve `api/tefasService.ts` dosyalarında Axios ile API istekleri yönetilir.
+• Fiyatlar, Redux store'da `priceCache` altında saklanarak gereksiz API çağrıları önlenir.
+• `hooks/usePrices.ts` hook'u ile bileşenler fiyat verilerine kolayca erişir.
 
 ────────────────────────────
-6. Bileşen Geliştirme Sırası
+6. Bileşen Geliştirme Sırası (Mevcut)
 ────────────────────────────
-1) HoldingForm  
-   – Autocomplete + TextField ile varlık tipi ve sembol seçimi  
-   – Miktar girişi, "Ekle" butonu
-
-2) HoldingsTable  
-   – MUI DataGrid veya simple Table  
-   – Anlık fiyat, toplam değer (fiyat × miktar)  
-   – Sil/Güncelle ikon butonları
-
-3) PortfolioSummary  
-   – Toplam portföy değeri (TRY)  
-   – Yüzde dağılım grafiği (Pie / Doughnut)
-
-4) AssetBreakdownChart  
-   – Bar veya Pie chart; her varlık grubunun değeri
-
-5) Layout & AppBar  
-   – Üstte sabit başlık, sağda tema switcher + "Fiyatları Güncelle"
+Proje, `.cursorrules` dosyasında belirtilen bileşenlerin çoğunu içermektedir. Ek olarak `CategoryChartsList`, `AddCategoryChartDialog` gibi kategori yönetimi bileşenleri eklenmiştir.
 
 ────────────────────────────
-7. Durum Yönetimi & Persist
+7. Durum Yönetimi & Persist (Güncel Mimarisi)
 ────────────────────────────
-• Redux Toolkit slice'ları: portfolioSlice (add/update/delete)  
-• redux-persist ile holdings state'ini LocalStorage'da saklamak  
-• PersistGate ile ilk yüklemede store rehydrate
+• **Redux Toolkit** state yönetim merkezi olarak kullanılır.
+• **Slice'lar:** State, `portfolioSlice` (varlıklar, fiyatlar) ve `categorySlice` (kategori grafikleri) olarak ikiye ayrılmıştır.
+• **Kalıcılık (Persistence):** `redux-persist` kullanılarak her slice için ayrı konfigürasyonlarla state'in seçili kısımları (`holdings`, `charts` vb.) LocalStorage'a kaydedilir.
+• **Listener Middleware:** Bir varlık silindiğinde, ilgili varlığın tüm kategorilerden de otomatik olarak silinmesi gibi işlemler için Redux listener middleware kullanılır. Bu, state tutarlılığını sağlar.
 
 ────────────────────────────
 8. Test & Kalite
 ────────────────────────────
-• Birim testi:  
-  – priceService fetch & error path  
-  – reducer aksiyonları  
-  – component snapshot / interaction  
-• ESLint & Prettier hususlarının CI'da çalışması
+• **Birim ve Entegrasyon Testleri:** `vitest` ve `react-testing-library` ile yazılmıştır.
+• **API Mocking:** Geliştirme ve test sırasında dış API'lara olan bağımlılığı kaldırmak için `msw` (Mock Service Worker) kullanılır.
+• **Linting:** ESLint ile kod kalitesi standartları korunur.
 
 ────────────────────────────
 9. Dağıtım
 ────────────────────────────
-• Vercel, Netlify veya GitHub Pages (vite.config'da base ayarı)  
-• Ortam değişkenleri (API_KEY) için .env ve Vite env importer  
-• README'de kullanım, API anahtarı alma ve .env örneği
+• **Web:** `vite build` komutu ile Vercel, Netlify gibi platformlara dağıtım yapılabilir.
+• **Mobil (Android):**
+  1. `npm run build`
+  2. `npx cap sync android`
+  3. Android Studio üzerinden APK derlemesi alınır.
 
 ────────────────────────────
-10. Opsiyonel Geliştirmeler
+10. Geliştirmeler
 ────────────────────────────
-✓ Kullanıcı doğrulaması + backend (Express + PostgreSQL)  
-✓ Portföy getiri grafiği (geçmiş fiyat serileri çekerek)  
-✓ CSV/Excel içe-dışa aktarma  
-✓ Bildirim & alarm (fiyat eşiklerine ulaşınca) 
+✓ Kullanıcı doğrulaması (geliştiriliyor - `AuthContext`, `LoginScreen` mevcut)
+✓ Portföy getiri grafiği (geçmiş fiyat serileri çekerek)
+✓ CSV/Excel içe-dışa aktarma
+✓ Bildirim & alarm (fiyat eşiklerine ulaşınca)

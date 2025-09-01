@@ -104,7 +104,7 @@ export class PriceService {
   }
 
   /**
-   * Verilen bir tarihin BIST piyasa saatleri (UTC 07:00-15:10) içinde olup olmadığını kontrol eder.
+   * Verilen bir tarihin BIST piyasa saatleri (UTC 07:00-15:30) içinde olup olmadığını kontrol eder.
    * @param date Kontrol edilecek tarih nesnesi.
    * @returns Piyasa açıksa true, değilse false.
    */
@@ -113,13 +113,13 @@ export class PriceService {
     const utcHour = date.getUTCHours();
     const utcMinutes = date.getUTCMinutes();
     
-    // Piyasa saatleri Turkey Time (UTC+3): 10:00 - 18:10 arası.
+    // Piyasa saatleri Turkey Time (UTC+3): 10:00 - 18:30 arası.
     // UTC karşılığı: 07:00 - 15:10 arası.
     return (
       day > 0 && day < 6 && // Hafta içi mi?
       (
         (utcHour >= 7 && utcHour < 15) || // 07:00 - 14:59 UTC
-        (utcHour === 15 && utcMinutes <= 10) // 15:00 - 15:10 UTC
+        (utcHour === 15 && utcMinutes <= 30) // 15:00 - 15:30 UTC
       )
     );
   }
