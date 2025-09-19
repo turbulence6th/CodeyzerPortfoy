@@ -26,6 +26,7 @@ export interface CategoryChart {
   name: string;          // Grafik adı
   description?: string;  // Grafik açıklaması
   categories: Category[]; // Kategoriler
+  includeUncategorized?: boolean; // Kategorisizleri dahil et
   createdAt: string;     // Oluşturma tarihi
   updatedAt: string;     // Güncelleme tarihi
 }

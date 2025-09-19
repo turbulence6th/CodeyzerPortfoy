@@ -22,8 +22,6 @@ type TefasApiResponse = {
 // TEFAS yatırım fonu fiyatlarını çeken servis
 export class TefasService {
   private static instance: TefasService;
-  private cache: Map<string, { data: PriceData; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 30 * 60 * 1000; // 30 dakika (daha uzun cache)
   private pendingRequests: Map<string, Promise<PriceData | null>> = new Map(); // Aynı istek tekrarını engelle
   private requestHistory: Map<string, number> = new Map(); // Rate limiting için
   private readonly MIN_REQUEST_INTERVAL = 5000; // 5 saniye minimum interval
@@ -35,10 +33,6 @@ export class TefasService {
       TefasService.instance = new TefasService();
     }
     return TefasService.instance;
-  }
-
-  private isCacheValid(timestamp: number): boolean {
-    return Date.now() - timestamp < this.CACHE_DURATION;
   }
 
   private canMakeRequest(fundCode: string): boolean {
@@ -59,22 +53,9 @@ export class TefasService {
 
     console.log(`📊 TEFAS tek tek request için ${fundCodes.length} fon:`, fundCodes);
 
-    // Önce cache'i kontrol et
-    const toFetch: string[] = [];
-    for (const fundCode of fundCodes) {
-      const cached = this.cache.get(fundCode);
-      if (cached && this.isCacheValid(cached.timestamp)) {
-        results[fundCode] = cached.data;
-      } else {
-        toFetch.push(fundCode);
-      }
-    }
-
-    console.log(`📊 Cache'den ${Object.keys(results).length}, API'den ${toFetch.length} fon çekilecek`);
-
     // Tek tek fetch et (rate limiting ile)
-    for (let i = 0; i < toFetch.length; i++) {
-      const fundCode = toFetch[i];
+    for (let i = 0; i < fundCodes.length; i++) {
+      const fundCode = fundCodes[i];
       
       try {
         const result = await this.fetchFundPrice(fundCode);
@@ -83,7 +64,7 @@ export class TefasService {
         }
         
         // Son istek değilse bekle (rate limiting)
-        if (i < toFetch.length - 1) {
+        if (i < fundCodes.length - 1) {
           await this.delay(100); // 100ms bekle
         }
       } catch (error) {
@@ -100,16 +81,10 @@ export class TefasService {
   }
 
   async fetchFundPrice(fundCode: string): Promise<PriceData | null> {
-    // Cache kontrolü
-    const cached = this.cache.get(fundCode);
-    if (cached && this.isCacheValid(cached.timestamp)) {
-      return cached.data;
-    }
-
     // Rate limiting kontrolü
     if (!this.canMakeRequest(fundCode)) {
-      console.log(`TEFAS: Rate limit, cache'den dönüyor (${fundCode})`);
-      return cached?.data || null;
+      console.log(`TEFAS: Rate limit engelledi (${fundCode})`);
+      return null;
     }
 
     // Aynı istek zaten beklemede mi?
@@ -221,7 +196,7 @@ export class TefasService {
         ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
         : await axios.post<TefasApiResponse>(endpoint, formData, {
             headers: {
-              Accept: 'application/json, text/javascript, */*; q=0.01',
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
               'X-Requested-With': 'XMLHttpRequest',
             },
@@ -230,10 +205,6 @@ export class TefasService {
 
       const items = response.data?.data;
       const priceData = TefasService.processFundHistory(items || [], fundCode);
-
-      if (priceData) {
-        this.cache.set(fundCode, { data: priceData, timestamp: Date.now() });
-      }
       
       return priceData;
     } catch (error) {
@@ -271,7 +242,7 @@ export class TefasService {
         ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
         : await axios.post<TefasApiResponse>(endpoint, formData, {
             headers: {
-              Accept: 'application/json, text/javascript, */*; q=0.01',
+              'Accept': 'application/json, text/javascript, */*; q=0.01',
               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
               'X-Requested-With': 'XMLHttpRequest',
             },
@@ -293,28 +264,6 @@ export class TefasService {
       throw new Error('TEFAS historical data could not be fetched.');
     }
   }
-
-  clearCache(): void {
-    this.cache.clear();
-    this.requestHistory.clear();
-    this.pendingRequests.clear();
-    console.log('🧹 TEFAS cache and history cleared');
-  }
-
-  // Cache istatistikleri
-  getCacheStats(): { totalCached: number; validCached: number; pendingRequests: number } {
-    const validCached = Array.from(this.cache.values()).filter(
-      item => this.isCacheValid(item.timestamp)
-    ).length;
-
-    return {
-      totalCached: this.cache.size,
-      validCached,
-      pendingRequests: this.pendingRequests.size,
-    };
-  }
-
-
 }
 
-export const tefasService = TefasService.getInstance(); 
+export const tefasService = TefasService.getInstance();

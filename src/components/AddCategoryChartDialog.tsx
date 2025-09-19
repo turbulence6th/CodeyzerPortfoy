@@ -14,7 +14,9 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import { MdAdd as AddIcon, MdDelete as DeleteIcon } from 'react-icons/md';
@@ -47,6 +49,7 @@ export const AddCategoryChartDialog: React.FC<AddCategoryChartDialogProps> = ({
   const [newCategoryName, setNewCategoryName] = useState('');
   const [selectedHoldings, setSelectedHoldings] = useState<Holding[]>([]);
   const [selectedColor, setSelectedColor] = useState(PREDEFINED_COLORS[0]);
+  const [includeUncategorized, setIncludeUncategorized] = useState(true);
 
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
@@ -59,6 +62,7 @@ export const AddCategoryChartDialog: React.FC<AddCategoryChartDialogProps> = ({
     setNewCategoryName('');
     setSelectedHoldings([]);
     setSelectedColor(PREDEFINED_COLORS[0]);
+    setIncludeUncategorized(true);
     onClose();
   };
 
@@ -95,6 +99,7 @@ export const AddCategoryChartDialog: React.FC<AddCategoryChartDialogProps> = ({
       name: chartName.trim(),
       description: chartDescription.trim() || undefined,
       categories: categories,
+      includeUncategorized: includeUncategorized,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -148,6 +153,16 @@ export const AddCategoryChartDialog: React.FC<AddCategoryChartDialogProps> = ({
               sx={{ mt: 2 }}
               multiline
               rows={2}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={includeUncategorized}
+                  onChange={(e) => setIncludeUncategorized(e.target.checked)}
+                />
+              }
+              label="Kategorisiz Varlıkları Grafiğe Dahil Et"
+              sx={{ mt: 1 }}
             />
           </Box>
 
@@ -314,4 +329,4 @@ export const AddCategoryChartDialog: React.FC<AddCategoryChartDialogProps> = ({
       </DialogActions>
     </Dialog>
   );
-}; 
+};

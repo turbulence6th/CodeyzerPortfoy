@@ -47,8 +47,8 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
       return total;
     }, 0);
 
-    // Kategoriye atanmamış varlıklar varsa ekle
-    if (unassignedValue > 0) {
+    // Kategoriye atanmamış varlıklar varsa ve grafik ayarı açıksa ekle
+    if (chart.includeUncategorized && unassignedValue > 0) {
       categoryValues.push({
         name: 'Kategorisiz',
         value: unassignedValue,

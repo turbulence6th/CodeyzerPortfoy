@@ -18,7 +18,9 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  Divider
+  Divider,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import type { SelectChangeEvent } from '@mui/material';
 import { 
@@ -62,6 +64,7 @@ export const EditCategoryChartDialog: React.FC<EditCategoryChartDialogProps> = (
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editCategoryColor, setEditCategoryColor] = useState('');
+  const [includeUncategorized, setIncludeUncategorized] = useState(true);
 
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
@@ -72,6 +75,7 @@ export const EditCategoryChartDialog: React.FC<EditCategoryChartDialogProps> = (
       setChartName(chart.name);
       setChartDescription(chart.description || '');
       setCategories([...chart.categories]);
+      setIncludeUncategorized(chart.includeUncategorized ?? true);
     }
   }, [chart, open]);
 
@@ -93,6 +97,7 @@ export const EditCategoryChartDialog: React.FC<EditCategoryChartDialogProps> = (
       name: chartName.trim(),
       description: chartDescription.trim() || undefined,
       categories: categories,
+      includeUncategorized: includeUncategorized,
       updatedAt: new Date().toISOString()
     };
 
@@ -217,6 +222,16 @@ export const EditCategoryChartDialog: React.FC<EditCategoryChartDialogProps> = (
               sx={{ mt: 2 }}
               multiline
               rows={2}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={includeUncategorized}
+                  onChange={(e) => setIncludeUncategorized(e.target.checked)}
+                />
+              }
+              label="Kategorisiz Varlıkları Grafiğe Dahil Et"
+              sx={{ mt: 1 }}
             />
           </Box>
 
@@ -519,4 +534,4 @@ export const EditCategoryChartDialog: React.FC<EditCategoryChartDialogProps> = (
       </DialogActions>
     </Dialog>
   );
-}; 
+};
