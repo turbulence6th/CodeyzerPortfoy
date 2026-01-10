@@ -112,9 +112,27 @@ const getDesignTokens = (mode: PaletteMode) => ({
       styleOverrides: {
         root: {
           // Ana renkle uyumlu parlama efekti
-          boxShadow: mode === 'dark' 
+          boxShadow: mode === 'dark'
             ? '0 4px 14px rgba(255, 171, 0, 0.4)'
             : '0 4px 14px rgba(230, 81, 0, 0.4)',
+        },
+      },
+    },
+    MuiBottomNavigation: {
+      styleOverrides: {
+        root: {
+          backgroundColor: 'transparent',
+          height: 'auto',
+          paddingTop: 8,
+          paddingBottom: 8,
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        container: {
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
         },
       },
     },

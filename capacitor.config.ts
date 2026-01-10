@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.codeyzer.portfoy',
   appName: 'Codeyzer Portfoy',
   webDir: 'dist',
+  backgroundColor: '#212121',
   server: {
     androidScheme: 'https'
   },

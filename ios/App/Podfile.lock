@@ -1,0 +1,53 @@
+PODS:
+  - Capacitor (7.4.4):
+    - CapacitorCordova
+  - CapacitorApp (7.0.2):
+    - Capacitor
+  - CapacitorAppLauncher (7.0.2):
+    - Capacitor
+  - CapacitorCordova (7.4.4)
+  - CapacitorFilesystem (7.1.4):
+    - Capacitor
+    - IONFilesystemLib (~> 1.0.1)
+  - CapacitorNativeBiometric (0.0.1):
+    - Capacitor
+  - IONFilesystemLib (1.0.1)
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorAppLauncher (from `../../node_modules/@capacitor/app-launcher`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
+  - CapacitorNativeBiometric (from `../../node_modules/capacitor-native-biometric`)
+
+SPEC REPOS:
+  trunk:
+    - IONFilesystemLib
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
+  CapacitorAppLauncher:
+    :path: "../../node_modules/@capacitor/app-launcher"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorFilesystem:
+    :path: "../../node_modules/@capacitor/filesystem"
+  CapacitorNativeBiometric:
+    :path: "../../node_modules/capacitor-native-biometric"
+
+SPEC CHECKSUMS:
+  Capacitor: 358dd1c3fdd71d969547b17e159fd8a7736cb45f
+  CapacitorApp: 1f6922c9c5c8b1c538d7fbe92ebe44a81b34bed3
+  CapacitorAppLauncher: b70f649f609bab6412eccdd413bd7f0dd42df4a9
+  CapacitorCordova: bf648a636f3c153f652d312ae145fb508b6ffced
+  CapacitorFilesystem: f9bd850c41e048180e5dc0cbb90f2033ede9d2cc
+  CapacitorNativeBiometric: 78cf21304251a512e4597437325b5e9b0cd9f7b3
+  IONFilesystemLib: 89258b8e3e85465da93127d25d7ce37f977e8a6f
+
+PODFILE CHECKSUM: fd78b976de33daaec388a6cb0d836b10520e1a22
+
+COCOAPODS: 1.16.2

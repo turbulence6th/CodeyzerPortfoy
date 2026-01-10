@@ -163,6 +163,7 @@ export const CategoryChart: React.FC<CategoryChartProps> = ({
               outerRadius={85}
               paddingAngle={2}
               dataKey="value"
+              animationDuration={300}
             >
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />

@@ -64,7 +64,15 @@ export const Layout: React.FC<LayoutProps> = ({
 
   return (
     <Box sx={{ flexGrow: 1, pb: 10 }}>
-      <AppBar position="static" elevation={2}>
+      <AppBar 
+        position="sticky" 
+        elevation={2} 
+        sx={{ 
+          pt: 'env(safe-area-inset-top)',
+          top: 0,
+          zIndex: 1100
+        }}
+      >
         <Toolbar>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
@@ -101,14 +109,17 @@ export const Layout: React.FC<LayoutProps> = ({
         {children}
       </Container>
 
-      <Paper 
-        sx={{ 
-          position: 'fixed', 
-          bottom: 0, 
-          left: 0, 
+      <Paper
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
           right: 0,
+          pb: 'env(safe-area-inset-bottom)',
+          bgcolor: '#212121',
+          borderRadius: 0,
           zIndex: 1000
-        }} 
+        }}
         elevation={3}
       >
         <BottomNavigation
