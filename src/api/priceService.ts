@@ -1,8 +1,26 @@
 import axios from 'axios';
 import type { PriceData, HistoricalPrice, AssetType } from '../models/types';
 import { tefasService } from './tefasService';
-import { USE_MOCK_API } from '../utils/config';
+import { USE_MOCK_API, config } from '../utils/config';
 import { mockAxiosGet } from './mockApiService';
+
+// Twelve Data API response types (spot XAU/USD historical için)
+interface TwelveDataTimeSeriesResponse {
+  meta: {
+    symbol: string;
+    interval: string;
+    currency_base: string;
+    currency_quote: string;
+  };
+  values: Array<{
+    datetime: string;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+  }>;
+  status: string;
+}
 
 // Swissquote API'sinden gelen veri yapısı için tipler
 interface SwissquoteProfilePrice {
@@ -235,9 +253,14 @@ export class PriceService {
   }
 
   async fetchHistoricalPrices(
-    symbol: string, 
+    symbol: string,
     range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y'| '5y' = '1mo'
   ): Promise<HistoricalPrice[]> {
+    // GAUTRY (Gram Altın TRY) için özel hesaplama
+    if (symbol === 'GAUTRY' || symbol === 'GAU') {
+      return this.fetchGoldHistoricalPrices(range);
+    }
+
     // Eğer fon ise, her zaman TEFAS servisini kullan
     if (PriceService.getAssetTypeFromSymbol(symbol) === 'FUND') { // Statik metoda çevrildi
       if (range === '1d') {
@@ -394,21 +417,24 @@ export class PriceService {
     };
   }
 
-  // Altın için özel çevrim: GC=F (ons altın USD) -> Gram altın TRY
+  // Altın için özel çevrim: XAU/USD (spot ons altın) -> Gram altın TRY
   private async fetchGoldPrice(symbol: string): Promise<PriceData> {
     try {
       // 1 ons = 31.1035 gram
       const OUNCE_TO_GRAM = 31.1035;
 
-      // GAUTRY'nin bağımlılıklarını (anlık ons ve anlık/dünkü USDTRY) paralel çek
+      // GAUTRY'nin bağımlılıklarını paralel çek:
+      // - Anlık ons: Swissquote (spot)
+      // - Dünkü ons: Twelve Data (spot) - Yahoo GC=F vadeli olduğu için kullanmıyoruz!
+      // - USDTRY: Yahoo
       const [
         ounceUsdSwissquoteResponse,
-        ounceUsdYahooResponse,
-        usdTryResponse, // -> USDTRY artık burada çekiliyor
+        previousOunceUsdFromTwelveData,
+        usdTryResponse,
       ] = await Promise.all([
         this.fetchSwissquotePrice('XAUUSD'),
-        this.fetchYahooPrice('GC=F'), // Dünkü ons fiyatı için Yahoo'yu kullan
-        this.fetchYahooPrice('USDTRY=X'), // Anlık USDTRY için Yahoo'yu kullan
+        this.fetchTwelveDataPreviousClose(), // Dünkü SPOT ons fiyatı (Twelve Data)
+        this.fetchYahooPrice('USDTRY=X'),
       ]);
 
       // Gelen verilerin geçerliliğini kontrol et
@@ -418,9 +444,6 @@ export class PriceService {
       if (!usdTryResponse || usdTryResponse.price === 0) {
         throw new Error('Could not fetch USDTRY exchange rate');
       }
-       if (!ounceUsdYahooResponse) {
-        throw new Error('Could not fetch historical XAUUSD price from Yahoo');
-      }
 
       // ANLIK FİYAT HESAPLAMASI
       const currentOuncePriceUSD = ounceUsdSwissquoteResponse.price;
@@ -428,13 +451,25 @@ export class PriceService {
       const gramPriceTRY = (currentOuncePriceUSD * currentUsdTryRate) / OUNCE_TO_GRAM;
 
       // DÜNKÜ FİYAT HESAPLAMASI
-      const previousOuncePriceUSD = ounceUsdYahooResponse.previousClose ?? ounceUsdYahooResponse.price;
+      // Twelve Data'dan gelen spot fiyatı kullan, yoksa anlık fiyata fallback
+      const previousOuncePriceUSD = previousOunceUsdFromTwelveData ?? currentOuncePriceUSD;
       const previousUsdTryRate = usdTryResponse.previousClose ?? usdTryResponse.price;
       const previousGramPriceTRY = (previousOuncePriceUSD * previousUsdTryRate) / OUNCE_TO_GRAM;
-      
+
       // DEĞİŞİM HESAPLAMASI
       const change = gramPriceTRY - previousGramPriceTRY;
       const changePercent = previousGramPriceTRY !== 0 ? (change / previousGramPriceTRY) * 100 : 0;
+
+      // Debug log
+      console.log('🥇 Gram Altın Hesaplama:', {
+        'Anlık Ons (Swissquote)': currentOuncePriceUSD,
+        'Dünkü Ons (TwelveData)': previousOunceUsdFromTwelveData,
+        'USDTRY': currentUsdTryRate,
+        'Dünkü USDTRY': previousUsdTryRate,
+        'Gram TRY': gramPriceTRY.toFixed(2),
+        'Dünkü Gram TRY': previousGramPriceTRY.toFixed(2),
+        'Değişim %': changePercent.toFixed(2),
+      });
 
       const result: PriceData = {
         symbol,
@@ -467,6 +502,219 @@ export class PriceService {
         error: 'Altın fiyatı hesaplanamadı', // Hata mesajı eklendi
         source: 'api', // -> Hata durumunda da kaynak bilgisi ekleniyor
       };
+    }
+  }
+
+  /**
+   * Gram Altın (GAUTRY) için historical veri çeker.
+   * Twelve Data XAU/USD + Yahoo USDTRY verilerini birleştirerek hesaplar.
+   */
+  private async fetchGoldHistoricalPrices(
+    range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y' | '5y'
+  ): Promise<HistoricalPrice[]> {
+    const OUNCE_TO_GRAM = 31.1035;
+    const apiKey = config.api.twelveDataApiKey;
+
+    if (!apiKey) {
+      console.warn('⚠️ Twelve Data API key tanımlı değil.');
+      return [];
+    }
+
+    // Range'e göre outputsize belirle (biraz fazla çek, eksik gün olmasın)
+    const outputSizeMap: Record<string, number> = {
+      '1d': 5,
+      '1w': 14,
+      '1mo': 45,
+      '3mo': 120,
+      '6mo': 200,
+      '1y': 400,
+      '3y': 1200,
+      '5y': 2000,
+    };
+    const outputSize = outputSizeMap[range] || 45;
+
+    // Yahoo range'i de biraz geniş tutalım
+    const yahooRangeMap: Record<string, string> = {
+      '1d': '5d',
+      '1w': '1mo',
+      '1mo': '3mo',
+      '3mo': '6mo',
+      '6mo': '1y',
+      '1y': '2y',
+      '3y': '5y',
+      '5y': '10y',
+    };
+    const yahooRange = yahooRangeMap[range] || '3mo';
+
+    try {
+      // Twelve Data'dan XAU/USD ve Yahoo'dan USDTRY paralel çek
+      const [xauResponse, usdTryData] = await Promise.all([
+        axios.get<TwelveDataTimeSeriesResponse>(
+          `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1day&outputsize=${outputSize}&apikey=${apiKey}`,
+          { timeout: 15000 }
+        ),
+        this.fetchYahooHistoricalForGold(yahooRange as any),
+      ]);
+
+      if (xauResponse.data?.status !== 'ok' || !xauResponse.data.values) {
+        console.warn('⚠️ Twelve Data XAU/USD verisi alınamadı');
+        return [];
+      }
+
+      // USDTRY verilerini tarih bazlı map'e çevir ve sıralı tarih listesi oluştur
+      const usdTryMap = new Map<string, number>();
+      const usdTryDates: string[] = [];
+      usdTryData.forEach(item => {
+        usdTryMap.set(item.date, item.price);
+        usdTryDates.push(item.date);
+      });
+      usdTryDates.sort();
+
+      // En yakın USDTRY tarihini bul
+      const findClosestUsdTry = (targetDate: string): number | null => {
+        // Önce exact match dene
+        if (usdTryMap.has(targetDate)) {
+          return usdTryMap.get(targetDate)!;
+        }
+        // Yoksa en yakın önceki tarihi bul
+        let closest: string | null = null;
+        for (const date of usdTryDates) {
+          if (date <= targetDate) {
+            closest = date;
+          } else {
+            break;
+          }
+        }
+        return closest ? usdTryMap.get(closest)! : null;
+      };
+
+      // XAU/USD ve USDTRY'yi birleştirerek gram altın TRY hesapla
+      const historicalData: HistoricalPrice[] = [];
+
+      for (const xauItem of xauResponse.data.values) {
+        const date = xauItem.datetime.split(' ')[0]; // "2025-01-10 00:00:00" -> "2025-01-10"
+        const xauPrice = parseFloat(xauItem.close);
+        const usdTryPrice = findClosestUsdTry(date);
+
+        if (usdTryPrice && !isNaN(xauPrice)) {
+          const gramPriceTry = (xauPrice * usdTryPrice) / OUNCE_TO_GRAM;
+          historicalData.push({
+            date,
+            price: gramPriceTry,
+          });
+        }
+      }
+
+      // Tarihe göre sırala (eskiden yeniye)
+      historicalData.sort((a, b) => a.date.localeCompare(b.date));
+
+      // İstenen aralığa göre filtrele
+      const now = new Date();
+      const rangeDaysMap: Record<string, number> = {
+        '1d': 1,
+        '1w': 7,
+        '1mo': 31,
+        '3mo': 93,
+        '6mo': 186,
+        '1y': 366,
+        '3y': 1100,
+        '5y': 1830,
+      };
+      const rangeDays = rangeDaysMap[range] || 31;
+      const startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - rangeDays);
+      const startDateStr = startDate.toISOString().split('T')[0];
+
+      const filteredData = historicalData.filter(item => item.date >= startDateStr);
+
+      console.log(`✅ GAUTRY historical (${range}):`, {
+        'Toplam veri': historicalData.length,
+        'Filtrelenmiş': filteredData.length,
+        'Başlangıç filtre': startDateStr,
+        'İlk tarih': filteredData[0]?.date,
+        'Son tarih': filteredData[filteredData.length - 1]?.date,
+        'İlk fiyat': filteredData[0]?.price?.toFixed(2),
+        'Son fiyat': filteredData[filteredData.length - 1]?.price?.toFixed(2),
+      });
+      return filteredData;
+    } catch (error) {
+      console.error('❌ GAUTRY historical veri hatası:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Yahoo'dan USDTRY historical verisi çeker (GAUTRY hesaplaması için).
+   */
+  private async fetchYahooHistoricalForGold(
+    range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y' | '5y'
+  ): Promise<HistoricalPrice[]> {
+    const url = `${API_BASE_URL}/USDTRY=X?range=${range}&interval=1d`;
+
+    try {
+      const response = await axios.get<YahooChartResponse>(url, {
+        timeout: 15000,
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (response.data?.chart?.result?.[0]) {
+        const result = response.data.chart.result[0];
+        const timestamps = result.timestamp || [];
+        const prices = result.indicators?.quote?.[0]?.close || [];
+
+        const historicalData: HistoricalPrice[] = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          const price = prices[i];
+          const timestamp = timestamps[i];
+
+          if (price !== null && timestamp !== null) {
+            historicalData.push({
+              date: new Date(timestamp * 1000).toISOString().split('T')[0],
+              price: price,
+            });
+          }
+        }
+        return historicalData;
+      }
+      return [];
+    } catch (error) {
+      console.error('❌ Yahoo USDTRY historical hatası:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Twelve Data API'den dünkü spot XAU/USD kapanış fiyatını çeker.
+   * Bu, Yahoo'daki GC=F (vadeli) yerine gerçek spot fiyatı sağlar.
+   */
+  private async fetchTwelveDataPreviousClose(): Promise<number | null> {
+    const apiKey = config.api.twelveDataApiKey;
+    if (!apiKey) {
+      console.warn('⚠️ Twelve Data API key tanımlı değil. VITE_TWELVE_DATA_API_KEY environment variable ekleyin.');
+      return null;
+    }
+
+    // Son 5 günlük veri çek, en son kapanışı al
+    const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1day&outputsize=5&apikey=${apiKey}`;
+
+    try {
+      const response = await axios.get<TwelveDataTimeSeriesResponse>(url, {
+        timeout: 10000,
+      });
+
+      if (response.data?.status === 'ok' && response.data.values?.length >= 2) {
+        // values[0] = en güncel (bugün/dün), values[1] = bir önceki gün
+        // Dünkü kapanış fiyatını almak için values[1] kullanıyoruz
+        const previousClose = parseFloat(response.data.values[1].close);
+        console.log('✅ Twelve Data XAU/USD previous close:', previousClose);
+        return previousClose;
+      }
+
+      console.warn('⚠️ Twelve Data geçersiz yanıt:', response.data);
+      return null;
+    } catch (error) {
+      console.error('❌ Twelve Data API hatası:', error);
+      return null;
     }
   }
 

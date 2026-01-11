@@ -102,7 +102,7 @@ export const AssetDetailDialog: React.FC<AssetDetailDialogProps> = ({ open, onCl
         <Box sx={{ mb: 2, textAlign: 'center' }}>
           <ToggleButtonGroup value={range} exclusive onChange={handleRangeChange} size="small">
             {
-              holding?.type === 'STOCK'
+              (holding?.type === 'STOCK' || holding?.symbol === 'GAUTRY')
                 ? [
                     <ToggleButton key="1d" value="1d">1G</ToggleButton>,
                     <ToggleButton key="1w" value="1w">1H</ToggleButton>,

@@ -12,6 +12,8 @@ export const config = {
     autoRefreshPrices: true, // Auto-refresh'i etkinleştir
     refreshInterval: 5 * 60 * 1000, // 5 dakika
     cacheTimeout: 60 * 1000, // 1 dakika
+    // Twelve Data API - Spot XAU/USD historical veri için
+    twelveDataApiKey: import.meta.env.VITE_TWELVE_DATA_API_KEY || '',
   },
   
   // UI Configuration

@@ -62,7 +62,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   };
 
   const handleOpenDetail = (holding: Holding) => {
-    if (holding.type === 'STOCK' || holding.type === 'FUND') {
+    if (holding.type === 'STOCK' || holding.type === 'FUND' || holding.symbol === 'GAUTRY') {
       setSelectedHolding(holding);
       setDetailDialogOpen(true);
     }
@@ -317,7 +317,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
               <ListItemText>Analiz</ListItemText>
             </MenuItem>
           )}
-          {(holding.type === 'STOCK' || holding.type === 'FUND') && (
+          {(holding.type === 'STOCK' || holding.type === 'FUND' || holding.symbol === 'GAUTRY') && (
             <MenuItem onClick={() => handleMenuItemClick(() => handleOpenDetail(holding))}>
               <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
               <ListItemText>Grafiği Görüntüle</ListItemText>
