@@ -688,56 +688,6 @@ export class PriceService {
   }
 
   /**
-   * Gram metal TRY değişim yüzdesini hesaplar.
-   * GLDTR ve GMSTR için Yahoo'dan gelen hatalı değişim yerine,
-   * spot metal fiyatı * USDTRY ile hesaplanan gram TRY değişimini kullanır.
-   * @param metal 'XAU' (altın) veya 'XAG' (gümüş)
-   */
-  private async fetchGramMetalChangeTRY(metal: 'XAU' | 'XAG'): Promise<{ changePercent: number } | null> {
-    const OUNCE_TO_GRAM = 31.1035;
-
-    try {
-      // Paralel olarak spot metal ve USDTRY verilerini çek
-      const [spotMetalChange, usdTryResponse] = await Promise.all([
-        this.fetchSpotMetalChange(metal),
-        this.fetchYahooPrice('USDTRY=X'),
-      ]);
-
-      if (!spotMetalChange || !usdTryResponse || usdTryResponse.price === 0) {
-        console.warn(`⚠️ Gram ${metal} TRY hesaplaması için veri alınamadı`);
-        return null;
-      }
-
-      // Anlık ve dünkü gram TRY fiyatlarını hesapla
-      const currentUsdTry = usdTryResponse.price;
-      const previousUsdTry = usdTryResponse.previousClose ?? currentUsdTry;
-
-      const currentGramTRY = (spotMetalChange.current * currentUsdTry) / OUNCE_TO_GRAM;
-      const previousGramTRY = (spotMetalChange.previous * previousUsdTry) / OUNCE_TO_GRAM;
-
-      // Değişim yüzdesini hesapla
-      const changePercent = previousGramTRY !== 0
-        ? ((currentGramTRY - previousGramTRY) / previousGramTRY) * 100
-        : 0;
-
-      console.log(`✅ Gram ${metal} TRY değişimi:`, {
-        'Anlık Metal USD': spotMetalChange.current,
-        'Dünkü Metal USD': spotMetalChange.previous,
-        'Anlık USDTRY': currentUsdTry,
-        'Dünkü USDTRY': previousUsdTry,
-        'Anlık Gram TRY': currentGramTRY.toFixed(2),
-        'Dünkü Gram TRY': previousGramTRY.toFixed(2),
-        'Değişim %': changePercent.toFixed(2),
-      });
-
-      return { changePercent };
-    } catch (error) {
-      console.error(`❌ Gram ${metal} TRY değişim hesaplama hatası:`, error);
-      return null;
-    }
-  }
-
-  /**
    * Twelve Data API'den spot metal değişim yüzdesini hesaplar.
    * Sonuçlar cache'lenir (rate limit aşımını önlemek için).
    * @param metal 'XAU' (altın) veya 'XAG' (gümüş)
@@ -919,18 +869,20 @@ export class PriceService {
         let change: number;
         let changePercent: number;
 
-        // GLDTR ve GMSTR için gram metal TRY değişimi kullan (Yahoo'dan gelen değişim hatalı)
+        // GLDTR ve GMSTR için gün içi açılış fiyatına göre değişim hesapla
         if (symbol === 'GLDTR.IS' || symbol === 'GMSTR.IS') {
-          const metal = symbol === 'GLDTR.IS' ? 'XAU' : 'XAG';
-          const gramMetalChange = await this.fetchGramMetalChangeTRY(metal);
+          const openPrices = indicators?.open?.filter((price: number | null): price is number => price != null) || [];
+          const todayOpen = openPrices.length > 0 ? openPrices[openPrices.length - 1] : null;
 
-          if (gramMetalChange) {
-            // Gram metal TRY değişim yüzdesini kullan
-            changePercent = gramMetalChange.changePercent;
-            change = currentPrice * (changePercent / 100);
-            console.log(`🔧 ${symbol} gram ${metal === 'XAU' ? 'altın' : 'gümüş'} TRY değişimi kullanılıyor:`, changePercent.toFixed(2) + '%');
+          if (todayOpen && todayOpen > 0) {
+            change = currentPrice - todayOpen;
+            changePercent = (change / todayOpen) * 100;
+            console.log(`🔧 ${symbol} gün içi değişim (açılışa göre):`, {
+              open: todayOpen.toFixed(2),
+              current: currentPrice.toFixed(2),
+              change: changePercent.toFixed(2) + '%'
+            });
           } else {
-            // Gram TRY veri alınamazsa standart hesaplamaya dön
             change = currentPrice - previousClose;
             changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
           }
