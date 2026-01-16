@@ -45,41 +45,6 @@ export class TefasService {
     this.requestHistory.set(fundCode, Date.now());
   }
 
-  // Çoklu fon fiyatlarını tek tek çek (rate limiting ile)
-  async fetchMultipleFundPrices(fundCodes: string[]): Promise<Record<string, PriceData>> {
-    const results: Record<string, PriceData> = {};
-    
-    if (fundCodes.length === 0) return results;
-
-    console.log(`📊 TEFAS tek tek request için ${fundCodes.length} fon:`, fundCodes);
-
-    // Tek tek fetch et (rate limiting ile)
-    for (let i = 0; i < fundCodes.length; i++) {
-      const fundCode = fundCodes[i];
-      
-      try {
-        const result = await this.fetchFundPrice(fundCode);
-        if (result) {
-          results[fundCode] = result;
-        }
-        
-        // Son istek değilse bekle (rate limiting)
-        if (i < fundCodes.length - 1) {
-          await this.delay(100); // 100ms bekle
-        }
-      } catch (error) {
-        console.warn(`TEFAS tek istek hatası ${fundCode}:`, error);
-      }
-    }
-
-    console.log(`✅ TEFAS sonuç: ${Object.keys(results).length}/${fundCodes.length} başarılı`);
-    return results;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   async fetchFundPrice(fundCode: string): Promise<PriceData | null> {
     // Rate limiting kontrolü
     if (!this.canMakeRequest(fundCode)) {

@@ -40,7 +40,8 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
       }
     };
 
-    const tefasManager = new RequestManager<PriceData | null>(1, onPriceUpdate);
+    // TEFAS için istekler arasında 150ms gecikme (sunucu rate limit'i aşmamak için)
+    const tefasManager = new RequestManager<PriceData | null>(1, onPriceUpdate, 150);
     const yahooManager = new RequestManager<PriceData | null>(4, onPriceUpdate);
 
     let cachedCount = 0;

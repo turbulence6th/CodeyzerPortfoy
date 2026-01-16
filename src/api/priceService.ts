@@ -87,6 +87,10 @@ export class PriceService {
   // private cache: Map<string, { data: PriceData; timestamp: number }> = new Map(); Artık Redux'ta
   private readonly CACHE_DURATION = 60000; // 1 dakika
 
+  // Twelve Data spot metal sonuçlarını cache'le (rate limit aşımını önlemek için)
+  private spotMetalCache: Map<string, { data: { current: number; previous: number; changePercent: number }; timestamp: number }> = new Map();
+  private readonly SPOT_METAL_CACHE_DURATION = 60000; // 1 dakika
+
   static getInstance(): PriceService {
     if (!PriceService.instance) {
       PriceService.instance = new PriceService();
@@ -684,38 +688,113 @@ export class PriceService {
   }
 
   /**
-   * Twelve Data API'den dünkü spot XAU/USD kapanış fiyatını çeker.
-   * Bu, Yahoo'daki GC=F (vadeli) yerine gerçek spot fiyatı sağlar.
+   * Gram metal TRY değişim yüzdesini hesaplar.
+   * GLDTR ve GMSTR için Yahoo'dan gelen hatalı değişim yerine,
+   * spot metal fiyatı * USDTRY ile hesaplanan gram TRY değişimini kullanır.
+   * @param metal 'XAU' (altın) veya 'XAG' (gümüş)
    */
-  private async fetchTwelveDataPreviousClose(): Promise<number | null> {
+  private async fetchGramMetalChangeTRY(metal: 'XAU' | 'XAG'): Promise<{ changePercent: number } | null> {
+    const OUNCE_TO_GRAM = 31.1035;
+
+    try {
+      // Paralel olarak spot metal ve USDTRY verilerini çek
+      const [spotMetalChange, usdTryResponse] = await Promise.all([
+        this.fetchSpotMetalChange(metal),
+        this.fetchYahooPrice('USDTRY=X'),
+      ]);
+
+      if (!spotMetalChange || !usdTryResponse || usdTryResponse.price === 0) {
+        console.warn(`⚠️ Gram ${metal} TRY hesaplaması için veri alınamadı`);
+        return null;
+      }
+
+      // Anlık ve dünkü gram TRY fiyatlarını hesapla
+      const currentUsdTry = usdTryResponse.price;
+      const previousUsdTry = usdTryResponse.previousClose ?? currentUsdTry;
+
+      const currentGramTRY = (spotMetalChange.current * currentUsdTry) / OUNCE_TO_GRAM;
+      const previousGramTRY = (spotMetalChange.previous * previousUsdTry) / OUNCE_TO_GRAM;
+
+      // Değişim yüzdesini hesapla
+      const changePercent = previousGramTRY !== 0
+        ? ((currentGramTRY - previousGramTRY) / previousGramTRY) * 100
+        : 0;
+
+      console.log(`✅ Gram ${metal} TRY değişimi:`, {
+        'Anlık Metal USD': spotMetalChange.current,
+        'Dünkü Metal USD': spotMetalChange.previous,
+        'Anlık USDTRY': currentUsdTry,
+        'Dünkü USDTRY': previousUsdTry,
+        'Anlık Gram TRY': currentGramTRY.toFixed(2),
+        'Dünkü Gram TRY': previousGramTRY.toFixed(2),
+        'Değişim %': changePercent.toFixed(2),
+      });
+
+      return { changePercent };
+    } catch (error) {
+      console.error(`❌ Gram ${metal} TRY değişim hesaplama hatası:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Twelve Data API'den spot metal değişim yüzdesini hesaplar.
+   * Sonuçlar cache'lenir (rate limit aşımını önlemek için).
+   * @param metal 'XAU' (altın) veya 'XAG' (gümüş)
+   */
+  private async fetchSpotMetalChange(metal: 'XAU' | 'XAG'): Promise<{ current: number; previous: number; changePercent: number } | null> {
+    // Önce cache'e bak
+    const cached = this.spotMetalCache.get(metal);
+    if (cached && Date.now() - cached.timestamp < this.SPOT_METAL_CACHE_DURATION) {
+      console.log(`📦 Twelve Data ${metal}/USD cache'den alındı`);
+      return cached.data;
+    }
+
     const apiKey = config.api.twelveDataApiKey;
     if (!apiKey) {
-      console.warn('⚠️ Twelve Data API key tanımlı değil. VITE_TWELVE_DATA_API_KEY environment variable ekleyin.');
+      console.warn('⚠️ Twelve Data API key tanımlı değil.');
       return null;
     }
 
-    // Son 5 günlük veri çek, en son kapanışı al
-    const url = `https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=1day&outputsize=5&apikey=${apiKey}`;
+    const symbol = `${metal}/USD`;
+    const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=5&apikey=${apiKey}`;
 
     try {
       const response = await axios.get<TwelveDataTimeSeriesResponse>(url, {
         timeout: 10000,
       });
 
+      console.log(`🔍 Twelve Data ${symbol} raw response:`, response.data);
+
       if (response.data?.status === 'ok' && response.data.values?.length >= 2) {
-        // values[0] = en güncel (bugün/dün), values[1] = bir önceki gün
-        // Dünkü kapanış fiyatını almak için values[1] kullanıyoruz
-        const previousClose = parseFloat(response.data.values[1].close);
-        console.log('✅ Twelve Data XAU/USD previous close:', previousClose);
-        return previousClose;
+        const current = parseFloat(response.data.values[0].close);
+        const previous = parseFloat(response.data.values[1].close);
+        const changePercent = previous !== 0 ? ((current - previous) / previous) * 100 : 0;
+
+        const result = { current, previous, changePercent };
+
+        // Cache'e kaydet
+        this.spotMetalCache.set(metal, { data: result, timestamp: Date.now() });
+
+        console.log(`✅ Twelve Data ${symbol}:`, { current, previous, changePercent: changePercent.toFixed(2) + '%' });
+        return result;
       }
 
-      console.warn('⚠️ Twelve Data geçersiz yanıt:', response.data);
+      console.warn(`⚠️ Twelve Data ${symbol} geçersiz yanıt - status: ${response.data?.status}, values length: ${response.data?.values?.length}`);
       return null;
     } catch (error) {
-      console.error('❌ Twelve Data API hatası:', error);
+      console.error(`❌ Twelve Data ${symbol} hatası:`, error);
       return null;
     }
+  }
+
+  /**
+   * Twelve Data API'den dünkü spot XAU/USD kapanış fiyatını çeker.
+   * Bu, Yahoo'daki GC=F (vadeli) yerine gerçek spot fiyatı sağlar.
+   */
+  private async fetchTwelveDataPreviousClose(): Promise<number | null> {
+    const result = await this.fetchSpotMetalChange('XAU');
+    return result?.previous ?? null;
   }
 
   private async fetchSwissquotePrice(symbol: string): Promise<PriceData> {
@@ -801,7 +880,6 @@ export class PriceService {
         const meta = result.meta;
         
         const indicators = result.indicators?.quote?.[0];
-        const adjCloseData = result.indicators?.adjclose?.[0];
         const closePrices = indicators?.close?.filter((price: number | null): price is number => price != null) || [];
         
         const currentPrice = meta.regularMarketPrice;
@@ -841,18 +919,18 @@ export class PriceService {
         let change: number;
         let changePercent: number;
 
-        // GMSTR için özel değişim hesaplaması (açılışa göre)
-        if (symbol === 'GMSTR.IS') {
-          const openPrices = indicators?.open?.filter((p: number | null): p is number => p !== null) || [];
-          const adjClosePrices = adjCloseData?.adjclose?.filter((p: number | null): p is number => p !== null) || [];
+        // GLDTR ve GMSTR için gram metal TRY değişimi kullan (Yahoo'dan gelen değişim hatalı)
+        if (symbol === 'GLDTR.IS' || symbol === 'GMSTR.IS') {
+          const metal = symbol === 'GLDTR.IS' ? 'XAU' : 'XAG';
+          const gramMetalChange = await this.fetchGramMetalChangeTRY(metal);
 
-          if (adjClosePrices.length > 0 && openPrices.length > 0) {
-            const priceToCompare = adjClosePrices[adjClosePrices.length - 1];
-            const baselinePrice = openPrices[openPrices.length - 1];
-            change = priceToCompare - baselinePrice;
-            changePercent = baselinePrice !== 0 ? (change / baselinePrice) * 100 : 0;
+          if (gramMetalChange) {
+            // Gram metal TRY değişim yüzdesini kullan
+            changePercent = gramMetalChange.changePercent;
+            change = currentPrice * (changePercent / 100);
+            console.log(`🔧 ${symbol} gram ${metal === 'XAU' ? 'altın' : 'gümüş'} TRY değişimi kullanılıyor:`, changePercent.toFixed(2) + '%');
           } else {
-            // Veri eksikse standart hesaplamaya dön
+            // Gram TRY veri alınamazsa standart hesaplamaya dön
             change = currentPrice - previousClose;
             changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
           }

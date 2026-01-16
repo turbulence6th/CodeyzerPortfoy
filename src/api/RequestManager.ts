@@ -28,14 +28,21 @@ export class RequestManager<T> {
   private activeRequests: Set<string> = new Set(); // Aktif istekleri ID ile takip et
   private concurrencyLimit: number;
   private onProgress: ProgressCallback<T>;
+  private delayBetweenRequests: number;
 
   /**
    * @param {number} concurrencyLimit The maximum number of requests to run in parallel.
    * @param {ProgressCallback<T>} onProgress A callback function that is called each time a request successfully completes.
+   * @param {number} delayBetweenRequests Optional delay in milliseconds between requests (default: 0).
    */
-  constructor(concurrencyLimit: number, onProgress: ProgressCallback<T>) {
+  constructor(concurrencyLimit: number, onProgress: ProgressCallback<T>, delayBetweenRequests: number = 0) {
     this.concurrencyLimit = concurrencyLimit;
     this.onProgress = onProgress;
+    this.delayBetweenRequests = delayBetweenRequests;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -72,12 +79,16 @@ export class RequestManager<T> {
               .catch(error => {
                 console.warn(`Request failed for ID ${request.id}:`, error);
               })
-              .finally(() => {
+              .finally(async () => {
                 this.activeRequests.delete(request.id); // İsteği aktif listesinden çıkar
-                
+
                 if (this.queue.length === 0 && this.activeRequests.size === 0) {
                   resolve();
                 } else {
+                  // İstekler arasında gecikme uygula (iOS için önemli)
+                  if (this.delayBetweenRequests > 0) {
+                    await this.delay(this.delayBetweenRequests);
+                  }
                   run();
                 }
               });
@@ -90,7 +101,7 @@ export class RequestManager<T> {
         resolve();
         return;
       }
-      
+
       run();
     });
   }
