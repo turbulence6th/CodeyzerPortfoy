@@ -370,17 +370,36 @@ export class PriceService {
           // bu veriyi cache'leme. Bu sayede bir sonraki istekte tekrar denenir.
           if (fundPrice.price === 0) {
             console.warn(`[API] Zero price for fund ${symbol}. Not caching.`);
-            return { ...fundPrice, source: 'api' as const }; // Cache'lemeden dön
+            return { ...fundPrice, source: 'api' as const };
           }
 
-          // Fon fiyatı bulundu ve 0'dan farklı, cache'e ekle ve dön
+          // Fon fiyatı bulundu ve 0'dan farklı
           const apiData = { ...fundPrice, source: 'api' as const };
-          // this.cache.set(symbol, { data: apiData, timestamp: Date.now() });
           return apiData;
         }
-        // Eğer fon fiyatı bulunamazsa Yahoo Finance denemeye devam et
+        // TEFAS'tan veri gelmedi, hata döndür (Yahoo fallback yok)
+        return {
+          symbol,
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          previousClose: 0,
+          historicalData: [],
+          lastUpdate: new Date().toISOString(),
+          error: 'TEFAS verisi alınamadı',
+        };
       } catch (error) {
-        console.warn(`⚠️ Failed to fetch price for ${symbol} from TEFAS, trying Yahoo Finance.`);
+        console.error(`❌ TEFAS error for ${symbol}:`, error);
+        return {
+          symbol,
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          previousClose: 0,
+          historicalData: [],
+          lastUpdate: new Date().toISOString(),
+          error: 'TEFAS verisi alınamadı',
+        };
       }
     }
 
@@ -869,23 +888,11 @@ export class PriceService {
         let change: number;
         let changePercent: number;
 
-        // GLDTR ve GMSTR için gün içi açılış fiyatına göre değişim hesapla
+        // GLDTR ve GMSTR için Yahoo'dan gelen değişim verisi hatalı, değişimi 0 olarak ayarla
         if (symbol === 'GLDTR.IS' || symbol === 'GMSTR.IS') {
-          const openPrices = indicators?.open?.filter((price: number | null): price is number => price != null) || [];
-          const todayOpen = openPrices.length > 0 ? openPrices[openPrices.length - 1] : null;
-
-          if (todayOpen && todayOpen > 0) {
-            change = currentPrice - todayOpen;
-            changePercent = (change / todayOpen) * 100;
-            console.log(`🔧 ${symbol} gün içi değişim (açılışa göre):`, {
-              open: todayOpen.toFixed(2),
-              current: currentPrice.toFixed(2),
-              change: changePercent.toFixed(2) + '%'
-            });
-          } else {
-            change = currentPrice - previousClose;
-            changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
-          }
+          change = 0;
+          changePercent = 0;
+          console.log(`🔧 ${symbol}: Değişim verisi devre dışı (Yahoo verisi güvenilir değil)`);
         } else {
           // Diğer tüm varlıklar için standart değişim hesaplaması (dünkü kapanışa göre)
           change = currentPrice - previousClose;

@@ -141,6 +141,30 @@ export class TefasService {
   }
 
   private async performSingleFundRequest(fundCode: string): Promise<PriceData | null> {
+    const maxRetries = 3;
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.executeFundRequest(fundCode);
+        return result;
+      } catch (error) {
+        lastError = error;
+        console.warn(`TEFAS: ${fundCode} deneme ${attempt}/${maxRetries} başarısız:`, error);
+
+        if (attempt < maxRetries) {
+          // Exponential backoff: 500ms, 1000ms, 2000ms...
+          const delay = 500 * Math.pow(2, attempt - 1);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    console.error(`TEFAS: ${fundCode} tüm denemeler başarısız`, lastError);
+    return null;
+  }
+
+  private async executeFundRequest(fundCode: string): Promise<PriceData | null> {
     const isDevelopment = import.meta.env.DEV;
     const endpoint = isDevelopment
       ? '/api/tefas/api/DB/BindHistoryInfo'
@@ -156,26 +180,21 @@ export class TefasService {
     formData.append('bittarih', today);
     formData.append('fonkod', fundCode);
 
-    try {
-      const response = USE_MOCK_API
-        ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
-        : await axios.post<TefasApiResponse>(endpoint, formData, {
-            headers: {
-              'Accept': 'application/json, text/javascript, */*; q=0.01',
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'X-Requested-With': 'XMLHttpRequest',
-            },
-            timeout: 15000,
-          });
+    const response = USE_MOCK_API
+      ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
+      : await axios.post<TefasApiResponse>(endpoint, formData, {
+          headers: {
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          timeout: 15000,
+        });
 
-      const items = response.data?.data;
-      const priceData = TefasService.processFundHistory(items || [], fundCode);
-      
-      return priceData;
-    } catch (error) {
-      console.error('TEFAS API hatası:', error);
-      return null;
-    }
+    const items = response.data?.data;
+    const priceData = TefasService.processFundHistory(items || [], fundCode);
+
+    return priceData;
   }
 
   async fetchHistoricalFundPrices(
