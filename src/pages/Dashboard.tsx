@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { 
-  Grid, 
-  Box, 
+import React, { useState, useEffect } from 'react';
+import {
+  Grid,
+  Box,
   Fab
 } from '@mui/material';
 import { MdAdd as AddIcon } from 'react-icons/md';
@@ -15,6 +15,7 @@ import { AddHoldingDialog } from '../components/AddHoldingDialog';
 import { EditHoldingDialog } from '../components/EditHoldingDialog';
 import { DeleteHoldingDialog } from '../components/DeleteHoldingDialog';
 import { PullToRefresh } from '../components/PullToRefresh';
+import { sendHoldingsToWatch, prepareHoldingsForWatch } from '../api/watchService';
 import type { Holding } from '../models/types';
 
 interface DashboardProps {
@@ -23,10 +24,10 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   const dispatch = useAppDispatch();
-  const { 
-    holdings, 
-    prices, 
-    loading, 
+  const {
+    holdings,
+    prices,
+    loading,
     totalDebt,
   } = useAppSelector((state) => state.portfolio);
   const categoryCharts = useAppSelector((state) => state.category.charts);
@@ -74,10 +75,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   const previousDayTotalValue = totalValue - dailyChange;
   
   // Yüzdesel değişimi toplam değere göre hesapla
-  const finalDailyChangePercent = previousDayTotalValue !== 0 
-    ? (dailyChange / previousDayTotalValue) * 100 
+  const finalDailyChangePercent = previousDayTotalValue !== 0
+    ? (dailyChange / previousDayTotalValue) * 100
     : 0;
 
+  // Apple Watch'a holdings listesini gönder (varlık eklendiğinde/değiştiğinde)
+  useEffect(() => {
+    console.log('[Dashboard] Holdings değişti, sayı:', holdings.length);
+    if (holdings.length > 0) {
+      const watchHoldings = prepareHoldingsForWatch(holdings);
+      console.log('[Dashboard] Watch için hazırlanan holdings:', watchHoldings);
+      sendHoldingsToWatch(watchHoldings).then(result => {
+        console.log('[Dashboard] Watch gönderim sonucu:', result);
+      });
+    }
+  }, [holdings]);
 
   const handleAddHolding = (holding: Holding) => {
     dispatch(addHolding(holding));
