@@ -833,8 +833,7 @@ export class PriceService {
 
   // Yahoo Finance'den tek bir sembol için fiyat çek (dahili kullanım)
   private async fetchYahooPrice(symbol: string): Promise<PriceData> {
-    // Son 5 günlük veriyi çek - daha fazla data noktası için
-    const url = `${API_BASE_URL}/${symbol}?range=5d&interval=1d&includePrePost=false`;
+    const url = `${API_BASE_URL}/${symbol}?range=1d&interval=1d&includePrePost=false`;
 
     try {
       const response = USE_MOCK_API
@@ -847,10 +846,7 @@ export class PriceService {
       if (response.data?.chart?.result?.[0]) {
         const result = response.data.chart.result[0];
         const meta = result.meta;
-        
-        const indicators = result.indicators?.quote?.[0];
-        const closePrices = indicators?.close?.filter((price: number | null): price is number => price != null) || [];
-        
+
         const currentPrice = meta.regularMarketPrice;
 
         if (currentPrice == null) {
@@ -863,61 +859,17 @@ export class PriceService {
             previousClose: 0,
             historicalData: [],
             lastUpdate: new Date().toISOString(),
-            error: 'Fiyat verisi eksik', // Hata mesajı eklendi
+            error: 'Fiyat verisi eksik',
           };
         }
-        
-        // Önceki kapanış fiyatını belirlemek için en sağlam yöntem:
-        let previousCloseSource: number | undefined;
 
-        if (closePrices.length >= 2) {
-          // Listenin sonundaki fiyat en güncel kapanış, sondan ikinci ise bir önceki günün kapanışıdır.
-          previousCloseSource = closePrices[closePrices.length - 2];
-        } else {
-          // Eğer geçmiş veri yetersizse, meta verisine fallback yap.
-          previousCloseSource = meta.previousClose;
-        }
+        // range=1d ile chartPreviousClose dünkü kapanışı verir
+        const previousClose = meta.previousClose
+          ?? (meta as any).chartPreviousClose
+          ?? currentPrice;
 
-        // Eğer hiçbir şekilde önceki kapanış bulunamazsa, sıfır değişim için mevcut fiyata dön
-        if (previousCloseSource == null) { // null veya undefined kontrolü
-            console.warn(`⚠️ ${symbol}: Önceki kapanış fiyatı belirlenemedi. Değişim 0 olarak ayarlandı.`);
-        }
-        
-        const previousClose = previousCloseSource ?? currentPrice;
-        
-        let change: number;
-        let changePercent: number;
-
-        // GLDTR ve GMSTR için Yahoo'dan gelen değişim verisi hatalı, değişimi 0 olarak ayarla
-        if (symbol === 'GLDTR.IS' || symbol === 'GMSTR.IS') {
-          change = 0;
-          changePercent = 0;
-          console.log(`🔧 ${symbol}: Değişim verisi devre dışı (Yahoo verisi güvenilir değil)`);
-        } else {
-          // Diğer tüm varlıklar için standart değişim hesaplaması (dünkü kapanışa göre)
-          change = currentPrice - previousClose;
-          changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
-        }
-        
-        // Aşırı yüksek değişim oranlarını sınırla (veri hatası olabilir)
-        const MAX_DAILY_CHANGE = 25; // %25 maksimum günlük değişim
-        if (Math.abs(changePercent) > MAX_DAILY_CHANGE) {
-          console.warn(`⚠️ ${symbol}: Aşırı yüksek değişim tespit edildi: ${changePercent.toFixed(2)}%. Sınırlanıyor.`);
-          changePercent = Math.sign(changePercent) * MAX_DAILY_CHANGE;
-        }
-        
-        // Debug: Gelişmiş fiyat analizi (altın için)
-        console.log(`🥇 ${symbol} Enhanced Debug:`, {
-          currentPrice,
-          calculatedPreviousClose: previousClose,
-          metaPreviousClose: meta.previousClose,
-          chartPreviousClose: (meta as any).chartPreviousClose,
-          closePricesLength: closePrices.length,
-          lastClosePrices: closePrices.slice(-3), // Son 3 kapanış
-          change: change.toFixed(4),
-          originalChangePercent: ((currentPrice - previousClose) / previousClose * 100).toFixed(2) + '%',
-          finalChangePercent: changePercent.toFixed(2) + '%'
-        });
+        const change = currentPrice - previousClose;
+        const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
 
         return {
           symbol,
