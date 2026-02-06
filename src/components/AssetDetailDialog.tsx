@@ -102,7 +102,8 @@ export const AssetDetailDialog: React.FC<AssetDetailDialogProps> = ({ open, onCl
         <Box sx={{ mb: 2, textAlign: 'center' }}>
           <ToggleButtonGroup value={range} exclusive onChange={handleRangeChange} size="small">
             {
-              (holding?.type === 'STOCK' || holding?.symbol === 'GAUTRY')
+              // GMSTR ve GLDTR için Yahoo 1y üstü bozuk veri dönüyor
+              ['GMSTR', 'GLDTR'].includes(holding?.symbol || '')
                 ? [
                     <ToggleButton key="1d" value="1d">1G</ToggleButton>,
                     <ToggleButton key="1w" value="1w">1H</ToggleButton>,
@@ -110,13 +111,24 @@ export const AssetDetailDialog: React.FC<AssetDetailDialogProps> = ({ open, onCl
                     <ToggleButton key="3mo" value="3mo">3A</ToggleButton>,
                     <ToggleButton key="6mo" value="6mo">6A</ToggleButton>,
                     <ToggleButton key="1y" value="1y">1Y</ToggleButton>,
-                    <ToggleButton key="5y" value="5y">5Y</ToggleButton>,
                   ]
-                : [
-                    <ToggleButton key="1w" value="1w">1H</ToggleButton>,
-                    <ToggleButton key="1mo" value="1mo">1A</ToggleButton>,
-                    <ToggleButton key="3mo" value="3mo">3A</ToggleButton>,
-                  ]
+                : (holding?.type === 'STOCK' || holding?.symbol === 'GAUTRY')
+                  ? [
+                      <ToggleButton key="1d" value="1d">1G</ToggleButton>,
+                      <ToggleButton key="1w" value="1w">1H</ToggleButton>,
+                      <ToggleButton key="1mo" value="1mo">1A</ToggleButton>,
+                      <ToggleButton key="3mo" value="3mo">3A</ToggleButton>,
+                      <ToggleButton key="6mo" value="6mo">6A</ToggleButton>,
+                      <ToggleButton key="1y" value="1y">1Y</ToggleButton>,
+                      <ToggleButton key="5y" value="5y">5Y</ToggleButton>,
+                    ]
+                  : [
+                      <ToggleButton key="1w" value="1w">1H</ToggleButton>,
+                      <ToggleButton key="1mo" value="1mo">1A</ToggleButton>,
+                      <ToggleButton key="3mo" value="3mo">3A</ToggleButton>,
+                      <ToggleButton key="6mo" value="6mo">6A</ToggleButton>,
+                      <ToggleButton key="1y" value="1y">1Y</ToggleButton>,
+                    ]
             }
           </ToggleButtonGroup>
         </Box>

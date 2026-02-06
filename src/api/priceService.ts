@@ -273,12 +273,26 @@ export class PriceService {
         return priceData?.historicalData || [];
       }
       // Diğer aralıklar için yeni TEFAS fonksiyonunu çağır
-      return tefasService.fetchHistoricalFundPrices(symbol, range as '1w' | '1mo' | '3mo');
+      return tefasService.fetchHistoricalFundPrices(symbol, range as '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y' | '5y');
     }
 
     const transformedSymbol = PriceService.transformSymbol(symbol);
     const interval = this.getIntervalForRange(range);
-    const url = `${API_BASE_URL}/${transformedSymbol}?range=${range}&interval=${interval}`;
+
+    // range yerine period1/period2 kullan - Yahoo bazen range ile hatalı veri dönüyor (GMSTR.IS gibi)
+    const now = Math.floor(Date.now() / 1000);
+    const periodSeconds: Record<string, number> = {
+      '1d': 86400,
+      '1w': 7 * 86400,
+      '1mo': 31 * 86400,
+      '3mo': 93 * 86400,
+      '6mo': 186 * 86400,
+      '1y': 366 * 86400,
+      '3y': 3 * 366 * 86400,
+      '5y': 5 * 366 * 86400,
+    };
+    const period1 = now - (periodSeconds[range] || 31 * 86400);
+    const url = `${API_BASE_URL}/${transformedSymbol}?period1=${period1}&period2=${now}&interval=${interval}`;
 
     try {
       const response = USE_MOCK_API
@@ -315,19 +329,22 @@ export class PriceService {
   }
 
   private getIntervalForRange(range: string): string {
+    // Bazı ETF'ler (GMSTR, GLDTR) için Yahoo interval=1d ile hatalı veri dönebiliyor
+    // Mümkün olduğunca saatlik interval kullanıyoruz, ama Yahoo'nun saatlik veri limiti ~2 yıl
     switch (range) {
       case '1d': return '5m';
       case '1w':
-      case '5d': return '15m'; // Bu hisseler için hala geçerli olabilir
-      case '1mo': return '1d';
+      case '5d': return '15m';
+      case '1mo':
       case '3mo':
       case '6mo':
       case '1y':
+        return '1h';
       case '3y':
       case '5y':
-        return '1d';
+        return '1d';  // Yahoo saatlik veri için ~2 yıl limit koyuyor
       default:
-        return '1d';
+        return '1h';
     }
   }
 

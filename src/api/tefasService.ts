@@ -199,54 +199,92 @@ export class TefasService {
 
   async fetchHistoricalFundPrices(
     fundCode: string,
-    range: '1w' | '1mo' | '3mo'
+    range: '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y' | '5y'
+  ): Promise<HistoricalPrice[]> {
+    const today = dayjs();
+
+    // TEFAS API büyük tarih aralıklarını desteklemiyor
+    // 3 aydan büyük aralıklar için birden fazla sorgu yapıp birleştiriyoruz
+    const chunkMonths = 3; // Her sorgu maksimum 3 ay
+    let totalMonths: number;
+
+    switch (range) {
+      case '1w': totalMonths = 0.25; break;
+      case '1mo': totalMonths = 1; break;
+      case '3mo': totalMonths = 3; break;
+      case '6mo': totalMonths = 6; break;
+      case '1y': totalMonths = 12; break;
+      case '3y': totalMonths = 36; break;
+      case '5y': totalMonths = 60; break;
+      default: totalMonths = 3;
+    }
+
+    // 3 ay veya daha az için tek sorgu
+    if (totalMonths <= chunkMonths) {
+      return this.fetchHistoricalChunk(fundCode, today.subtract(totalMonths, 'months'), today);
+    }
+
+    // Büyük aralıklar için parçalı sorgular
+    const chunks: Promise<HistoricalPrice[]>[] = [];
+    let endDate = today;
+
+    for (let remaining = totalMonths; remaining > 0; remaining -= chunkMonths) {
+      const monthsToFetch = Math.min(remaining, chunkMonths);
+      const startDate = endDate.subtract(monthsToFetch, 'months');
+      chunks.push(this.fetchHistoricalChunk(fundCode, startDate, endDate));
+      endDate = startDate;
+    }
+
+    try {
+      const results = await Promise.all(chunks);
+      // Tüm sonuçları birleştir ve tarihe göre sırala
+      const allData = results.flat();
+
+      // Tekrar eden tarihleri kaldır
+      const uniqueData = new Map<string, HistoricalPrice>();
+      allData.forEach(item => uniqueData.set(item.date, item));
+
+      return Array.from(uniqueData.values()).sort((a, b) => a.date.localeCompare(b.date));
+    } catch (error) {
+      console.error(`TEFAS API historical data error for ${fundCode}:`, error);
+      throw new Error('TEFAS historical data could not be fetched.');
+    }
+  }
+
+  private async fetchHistoricalChunk(
+    fundCode: string,
+    startDate: dayjs.Dayjs,
+    endDate: dayjs.Dayjs
   ): Promise<HistoricalPrice[]> {
     const isDevelopment = import.meta.env.DEV;
     const endpoint = isDevelopment
       ? '/api/tefas/api/DB/BindHistoryInfo'
       : 'https://www.tefas.gov.tr/api/DB/BindHistoryInfo';
 
-    const today = dayjs();
-    let startDate = dayjs();
-
-    switch (range) {
-      case '1w': startDate = today.subtract(7, 'days'); break;
-      case '1mo': startDate = today.subtract(1, 'month'); break;
-      case '3mo': startDate = today.subtract(3, 'months'); break;
-    }
-
     const formData = new URLSearchParams();
     formData.append('fontip', 'YAT');
     formData.append('bastarih', startDate.format('DD.MM.YYYY'));
-    formData.append('bittarih', today.format('DD.MM.YYYY'));
+    formData.append('bittarih', endDate.format('DD.MM.YYYY'));
     formData.append('fonkod', fundCode);
 
-    try {
-      const response = USE_MOCK_API
-        ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
-        : await axios.post<TefasApiResponse>(endpoint, formData, {
-            headers: {
-              'Accept': 'application/json, text/javascript, */*; q=0.01',
-              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              'X-Requested-With': 'XMLHttpRequest',
-            },
-            timeout: 20000, // extend timeout for larger data
-          });
+    const response = USE_MOCK_API
+      ? await mockAxiosGet(`${endpoint}?FonKodu=${fundCode}`)
+      : await axios.post<TefasApiResponse>(endpoint, formData, {
+          headers: {
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          timeout: 20000,
+        });
 
-      const items = response.data?.data;
-      if (!items || items.length === 0) return [];
+    const items = response.data?.data;
+    if (!items || items.length === 0) return [];
 
-      // Sort old to new for charting
-      items.sort((a: FundHistoryItem, b: FundHistoryItem) => parseInt(a.TARIH) - parseInt(b.TARIH)); 
-
-      return items.map((item: FundHistoryItem) => ({
-        date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
-        price: item.FIYAT,
-      }));
-    } catch (error) {
-      console.error(`TEFAS API historical data error for ${fundCode}:`, error);
-      throw new Error('TEFAS historical data could not be fetched.');
-    }
+    return items.map((item: FundHistoryItem) => ({
+      date: new Date(parseInt(item.TARIH)).toISOString().split('T')[0],
+      price: item.FIYAT,
+    }));
   }
 }
 
