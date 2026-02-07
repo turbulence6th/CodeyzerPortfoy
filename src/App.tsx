@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useEffect } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import type { URLOpenListenerEvent } from '@capacitor/app';
@@ -17,19 +17,14 @@ import { setTotalDebt } from './store/portfolioSlice';
 function AppContent() {
   const holdings = useAppSelector(state => state.portfolio.holdings);
   const { refreshPrices } = usePrices(holdings);
-  const location = useLocation();
 
   return (
     <Layout>
-      <div style={{ display: location.pathname === '/' ? 'block' : 'none' }}>
-        <Dashboard onRefresh={refreshPrices} />
-      </div>
-      <div style={{ display: location.pathname === '/category-charts' ? 'block' : 'none' }}>
-        <CategoryCharts />
-      </div>
-      <div style={{ display: location.pathname === '/settings' ? 'block' : 'none' }}>
-        <Settings />
-      </div>
+      <Routes>
+        <Route path="/" element={<Dashboard onRefresh={refreshPrices} />} />
+        <Route path="/category-charts" element={<CategoryCharts />} />
+        <Route path="/settings" element={<Settings />} />
+      </Routes>
     </Layout>
   );
 }
@@ -39,14 +34,17 @@ function AuthGuard() {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const addListeners = async () => {
-      const stateListener = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+    let stateListener: PluginListenerHandle | undefined;
+    let urlListener: PluginListenerHandle | undefined;
+
+    const setupListeners = async () => {
+      stateListener = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
         if (!isActive && isBiometricEnabled) {
           lockApp();
         }
       });
 
-      const urlListener = await CapacitorApp.addListener('appUrlOpen', (event: URLOpenListenerEvent) => {
+      urlListener = await CapacitorApp.addListener('appUrlOpen', (event: URLOpenListenerEvent) => {
         const url = new URL(event.url);
         if (url.hostname === 'borc-geldi') {
           const debtAmount = parseFloat(url.searchParams.get('tutar') || '0');
@@ -55,22 +53,13 @@ function AuthGuard() {
           }
         }
       });
-
-      return { stateListener, urlListener };
     };
 
-    let listeners: {
-      stateListener: PluginListenerHandle;
-      urlListener: PluginListenerHandle;
-    } | undefined;
-
-    addListeners().then(handles => {
-      listeners = handles;
-    });
+    setupListeners();
 
     return () => {
-      listeners?.stateListener.remove();
-      listeners?.urlListener.remove();
+      stateListener?.remove();
+      urlListener?.remove();
     };
   }, [isBiometricEnabled, lockApp, dispatch]);
 

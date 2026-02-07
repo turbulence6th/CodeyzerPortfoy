@@ -21,10 +21,8 @@ export interface WatchHolding {
 
 // Plugin'i register et (sadece iOS'ta çalışır)
 const isIOS = Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios';
-console.log('[WatchService] Platform:', Capacitor.getPlatform(), 'isNative:', Capacitor.isNativePlatform(), 'isIOS:', isIOS);
 
 const Watch = isIOS ? registerPlugin<WatchPlugin>('Watch') : null;
-console.log('[WatchService] Watch plugin:', Watch ? 'registered' : 'null');
 
 /**
  * Holdings listesini Apple Watch'a gönderir
@@ -38,7 +36,6 @@ export async function sendHoldingsToWatch(holdings: WatchHolding[]): Promise<boo
 
   try {
     const result = await Watch.sendHoldings({ holdings });
-    console.log('Watch: Holdings gönderildi', result);
     return result.success;
   } catch (error) {
     console.error('Watch: Holdings gönderilemedi', error);

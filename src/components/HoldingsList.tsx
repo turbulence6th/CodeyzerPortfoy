@@ -1,25 +1,17 @@
 import React, { useState } from 'react';
 import { 
-  Grid, Paper, Typography, Box, IconButton, Accordion,
-  AccordionSummary, AccordionDetails, Chip, Skeleton, Menu,
-  MenuItem, ListItemIcon, ListItemText, Tooltip
+  Grid, Paper, Typography, Box, Accordion,
+  AccordionSummary, AccordionDetails
 } from '@mui/material';
 import {
-  MdEdit as EditIcon,
-  MdDelete as DeleteIcon,
   MdExpandMore as ExpandMoreIcon,
-  MdAssessment as AssessmentIcon,
-  MdMoreVert as MoreVertIcon,
-  MdErrorOutline as ErrorOutlineIcon,
-  MdCloudDone as CloudDoneIcon,
-  MdCloudDownload as CloudDownloadIcon,
-  MdEventBusy as StaleDateIcon,
 } from 'react-icons/md';
 import type { Holding, AssetType, PriceData, CategoryChart } from '../models/types';
 import { StockAnalysisDialog } from './StockAnalysisDialog';
 import { AssetDetailDialog } from './AssetDetailDialog';
 import { useAppSelector } from '../hooks/redux';
 import { useBackButton } from '../hooks/useBackButton';
+import { HoldingRowItem } from './HoldingRowItem';
 
 interface HoldingsListProps {
   holdings: Holding[];
@@ -137,205 +129,6 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
     }, 0);
   };
 
-  const RowItem: React.FC<{
-    holding: Holding;
-    isLast: boolean;
-    priceData: PriceData | undefined;
-    onEdit: (h: Holding) => void;
-    onDelete: (h: Holding) => void;
-    onOpenAnalysis: (h: Holding) => void;
-  }> = ({ holding, priceData, onEdit, onDelete, onOpenAnalysis, isLast }) => {
-    const { symbol, amount, note } = holding;
-    const isUpdating = updatingSymbols.includes(symbol);
-    const isPositive = (priceData?.changePercent ?? 0) >= 0;
-    const holdingCategories = getHoldingCategories(holding.id);
-    
-    // Eğer anlık fiyat 0 ise ve önceki günün fiyatı varsa, onu kullan
-    const priceToUse = (priceData?.price === 0 && priceData.previousClose)
-      ? priceData.previousClose
-      : priceData?.price;
-
-    // Each row now manages its own menu state
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const isMenuOpen = Boolean(anchorEl);
-
-    // Veri Kaynağı İkonu
-    const sourceIcon = priceData?.source ? (
-      <Tooltip title={priceData.source === 'cache' ? 'Fiyat önbellekten alındı' : 'Fiyat anlık olarak çekildi'}>
-        <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
-          {priceData.source === 'cache' ? <CloudDoneIcon size="0.9rem" /> : <CloudDownloadIcon size="0.9rem" />}
-        </Box>
-      </Tooltip>
-    ) : null;
-
-    // Eski Tarih Uyarısı İkonu
-    const todayStr = new Date().toISOString().split('T')[0];
-    const isStalePrice = holding.type === 'FUND' && priceData?.priceDate && priceData.priceDate !== todayStr;
-    const staleDateIcon = isStalePrice ? (
-      <Tooltip title={`Bu fiyat ${new Date(priceData.priceDate!).toLocaleDateString('tr-TR')} tarihine aittir`}>
-        <Box sx={{ display: 'flex', alignItems: 'center', color: 'warning.main' }}>
-          <StaleDateIcon size="0.9rem" />
-        </Box>
-      </Tooltip>
-    ) : null;
-
-    const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-      event.stopPropagation();
-      setAnchorEl(event.currentTarget);
-    };
-
-    const handleMenuClose = () => {
-      // event.stopPropagation() is not needed here as onClose is for backdrop/escape
-      setAnchorEl(null);
-    };
-
-    const handleMenuItemClick = (action: () => void) => {
-      action();
-      handleMenuClose();
-    };
-    
-    return (
-      <Box
-        key={holding.id}
-        sx={{
-          position: 'relative',
-          borderBottom: isLast ? 'none' : '1px solid',
-          borderColor: 'divider',
-          backgroundColor: 'background.paper',
-          // cursor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'pointer' : 'default', // Satır tıklaması kaldırıldı
-          '&:hover': {
-            // backgroundColor: (holding.type === 'STOCK' || holding.type === 'FUND') ? 'action.hover' : 'transparent', // Hover efekti kaldırıldı
-          },
-          display: 'flex',
-          alignItems: 'center',
-          pr: 1,
-        }}
-      >
-        <Box
-          sx={{
-            flexGrow: 1,
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            justifyContent: { xs: 'flex-start', sm: 'space-between' },
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            py: { xs: 0.5, sm: 1 },
-            pl: { xs: 1.5, sm: 2.5 },
-            pr: { xs: 0.75, sm: 2 },
-            gap: { xs: 0.5, sm: 0 },
-          }}
-        >
-          {/* Left Side */}
-          <Box sx={{ flex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-              <Typography variant="subtitle1" fontWeight="medium">{symbol}</Typography>
-              {sourceIcon}
-              {staleDateIcon}
-            </Box>
-            {priceData?.name && (
-              <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', mb: 0.25 }}>
-                {priceData.name}
-              </Typography>
-            )}
-            <Typography variant="body2" color="text.secondary">
-              {amount} adet
-              {priceData && !priceData.error && priceToUse && (
-                <> • ₺{priceToUse.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} birim fiyat</>
-              )}
-            </Typography>
-            {holdingCategories.length > 0 && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                {holdingCategories.map((category, index) => (
-                  <Chip key={index} label={category.name} size="small"
-                    sx={{
-                      backgroundColor: category.color,
-                      color: 'white',
-                      fontSize: '0.7rem',
-                      height: '20px',
-                      '& .MuiChip-label': { padding: '0 6px' }
-                    }}
-                    title={`${category.chartName} grafiğindeki ${category.name} kategorisi`}
-                  />
-                ))}
-              </Box>
-            )}
-            {note && (
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ fontStyle: 'italic', mt: 0.25 }}>
-                {note}
-              </Typography>
-            )}
-          </Box>
-          {/* Right Side */}
-          <Box sx={{ flex: { xs: '0 0 auto', sm: '0 0 120px', md: '0 0 140px' }, textAlign: { xs: 'left', sm: 'right' }, mt: { xs: 0, sm: -0.25 } }}>
-            {isUpdating ? (
-              <>
-                <Skeleton variant="text" width={80} sx={{ mb: 0.5 }} />
-                <Skeleton variant="text" width={50} />
-              </>
-            ) : priceData?.error ? (
-                <Tooltip title={priceData.error} arrow>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 0.5, color: 'error.main' }}>
-                    <ErrorOutlineIcon size="1rem" />
-                    <Typography variant="subtitle1" color="error" fontWeight="medium">
-                      Hata
-                    </Typography>
-                  </Box>
-                </Tooltip>
-            ) : (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, gap: 1 }}>
-                  <Typography variant="subtitle1" fontWeight="medium">
-                    ₺{(priceToUse ? priceToUse * amount : 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Typography>
-                </Box>
-                {priceData && (
-                  <Typography variant="body2" color={isPositive ? 'success.main' : 'error.main'}>
-                    {isPositive ? '+' : ''}{priceData.changePercent.toFixed(2)}%
-                  </Typography>
-                )}
-              </>
-            )}
-          </Box>
-        </Box>
-        <IconButton
-          aria-label="daha fazla"
-          onClick={handleMenuOpen}
-          size="small"
-        >
-          <MoreVertIcon />
-        </IconButton>
-        <Menu
-          anchorEl={anchorEl}
-          open={isMenuOpen}
-          onClose={handleMenuClose}
-          onClick={(e) => e.stopPropagation()} // Prevent menu clicks from triggering row click
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        >
-          {holding.type === 'STOCK' && (
-            <MenuItem onClick={() => handleMenuItemClick(() => onOpenAnalysis(holding))}>
-              <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>Analiz</ListItemText>
-            </MenuItem>
-          )}
-          {(holding.type === 'STOCK' || holding.type === 'FUND' || holding.symbol === 'GAUTRY') && (
-            <MenuItem onClick={() => handleMenuItemClick(() => handleOpenDetail(holding))}>
-              <ListItemIcon><AssessmentIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>Grafiği Görüntüle</ListItemText>
-            </MenuItem>
-          )}
-          <MenuItem onClick={() => handleMenuItemClick(() => onEdit(holding))}>
-            <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Düzenle</ListItemText>
-          </MenuItem>
-          <MenuItem onClick={() => handleMenuItemClick(() => onDelete(holding))}>
-            <ListItemIcon><DeleteIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Sil</ListItemText>
-          </MenuItem>
-        </Menu>
-      </Box>
-    );
-  };
-
   return (
     <Grid size={{ xs: 12 }}>
       <Box>
@@ -369,14 +162,17 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
                 {typeHoldings.map((holding, index) => {
                   const priceData = prices[holding.symbol];
                   return (
-                    <RowItem
+                    <HoldingRowItem
                       key={holding.id}
                       holding={holding}
                       isLast={index === typeHoldings.length - 1}
                       priceData={priceData}
+                      isUpdating={updatingSymbols.includes(holding.symbol)}
+                      categories={getHoldingCategories(holding.id)}
                       onEdit={onEditHolding}
                       onDelete={onDeleteHolding}
                       onOpenAnalysis={handleOpenAnalysis}
+                      onOpenDetail={handleOpenDetail}
                     />
                   );
                 })}

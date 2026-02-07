@@ -22,11 +22,19 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
   const priceCacheRef = useRef(priceCache);
   priceCacheRef.current = priceCache;
 
-  const fetchPrices = useCallback(async () => {
-    if (holdings.length === 0) return;
+  const holdingsRef = useRef(holdings);
+  holdingsRef.current = holdings;
 
-    const uniqueSymbols = [...new Set(holdings.map(h => h.symbol))];
-    dispatch(fetchPricesStart(uniqueSymbols));
+  // Eşzamanlı fetch cycle'larını yönetmek için generation counter
+  const fetchGenerationRef = useRef(0);
+
+  // Belirtilen semboller için fiyat çek
+  const fetchPrices = useCallback(async (symbolsToFetch: string[]) => {
+    if (symbolsToFetch.length === 0) return;
+
+    const currentGeneration = ++fetchGenerationRef.current;
+
+    dispatch(fetchPricesStart(symbolsToFetch));
 
     const onPriceUpdate = (priceData: PriceData | null) => {
       if (priceData) {
@@ -48,14 +56,14 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
     const liveSymbols: string[] = [];
 
     // Tüm semboller artık tek bir listede, özel bir ayrım yok.
-    for (const symbol of uniqueSymbols) {
+    for (const symbol of symbolsToFetch) {
       const type = PriceService.getAssetTypeFromSymbol(symbol);
       const cachedItem = priceCacheRef.current[symbol];
-      
-      const useCache = cachedItem 
+
+      const useCache = cachedItem
         ? priceService.isCacheValid(symbol, cachedItem.timestamp, cachedItem.data)
         : false;
- 
+
       if (useCache) {
         dispatch(updatePriceData({ ...cachedItem.data, source: 'cache' }));
         cachedCount++;
@@ -69,33 +77,53 @@ export function usePrices(holdings: Holding[]): UsePricesReturn {
         }
       }
     }
- 
+
     try {
       // Fiyat güncelleme istatistiklerini ayarla
       dispatch(setLastUpdateStats({
         live: liveSymbols.length,
         cached: cachedCount,
-        total: uniqueSymbols.length,
+        total: symbolsToFetch.length,
       }));
-      
+
       // Tüm isteklerin (GAUTRY dahil) tamamlanmasını bekle
       await Promise.all([tefasManager.start(), yahooManager.start()]);
- 
-      dispatch(fetchPricesSuccess());
+
+      // Sadece en son generation tamamlandığında global state'i güncelle
+      // Eski cycle'ların fetchPricesSuccess çağırıp updatingSymbols'ı temizlemesini engeller
+      if (currentGeneration === fetchGenerationRef.current) {
+        dispatch(fetchPricesSuccess());
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Fiyatlar çekilemedi.';
-      dispatch(fetchPricesError(message));
+      if (currentGeneration === fetchGenerationRef.current) {
+        const message = err instanceof Error ? err.message : 'Fiyatlar çekilemedi.';
+        dispatch(fetchPricesError(message));
+      }
     }
- 
-  }, [holdings, dispatch]);
+
+  }, [dispatch]);
+
+  // Önceki sembolleri takip et — yeni eklenen sembolleri tespit etmek için
+  const prevSymbolsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    fetchPrices();
-  }, [fetchPrices]);
-  
+    const currentSymbols = [...new Set(holdings.map(h => h.symbol))];
+    const currentSet = new Set(currentSymbols);
+    const newSymbols = currentSymbols.filter(s => !prevSymbolsRef.current.has(s));
+
+    prevSymbolsRef.current = currentSet;
+
+    if (newSymbols.length > 0) {
+      // İlk yüklemede tüm semboller "yeni" sayılır → hepsi çekilir
+      // Sonraki eklemelerde sadece yeni sembol(ler) çekilir
+      fetchPrices(newSymbols);
+    }
+  }, [holdings, fetchPrices]);
+
   const refreshPrices = useCallback(() => {
-    fetchPrices();
+    const uniqueSymbols = [...new Set(holdingsRef.current.map(h => h.symbol))];
+    fetchPrices(uniqueSymbols);
   }, [fetchPrices]);
 
   return { refreshPrices };
-} 
+}

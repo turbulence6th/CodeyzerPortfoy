@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
 import { priceService } from '../api/priceService';
-import type { AssetType, Holding } from '../models/types';
+import type { AssetType, Holding, PriceData } from '../models/types';
 
 // Varlık türleri ve sembol önerileri
 const assetTypes: { value: AssetType; label: string; examples: string }[] = [
@@ -73,7 +73,7 @@ const symbolSuggestions: Record<AssetType, string[]> = {
 interface AddHoldingDialogProps {
   open: boolean;
   onClose: () => void;
-  onAddHolding: (holding: Holding) => void;
+  onAddHolding: (holding: Holding, initialPriceData?: PriceData) => void;
 }
 
 export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
@@ -92,7 +92,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
 
-  const validateSymbol = async (symbolToValidate: string): Promise<boolean> => {
+  const validateSymbol = async (symbolToValidate: string): Promise<PriceData | null> => {
     try {
       setValidating(true);
       const priceData = await priceService.fetchSinglePrice(symbolToValidate);
@@ -100,13 +100,13 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
       // Fiyat 0 olsa bile, önceki günün fiyatı varsa sembol geçerlidir.
       // Bu, AFA gibi fonların güncel fiyatı 0 olduğunda eklenebilmesini sağlar.
       if (priceData && (priceData.price > 0 || (priceData.previousClose && priceData.previousClose > 0))) {
-        return true;
+        return priceData;
       } else {
-        return false;
+        return null;
       }
     } catch (error) {
       console.error('Symbol validation error:', error);
-      return false;
+      return null;
     } finally {
       setValidating(false);
     }
@@ -130,18 +130,20 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
     }
 
     const cleanSymbol = symbol.toUpperCase().trim();
+    let validatedPriceData: PriceData | undefined;
 
     // "TRY" sembolü için özel durum
     if (cleanSymbol !== 'TRY') {
       // Sembol doğrulama
       setValidating(true);
-      const isValidSymbol = await validateSymbol(cleanSymbol);
+      const priceData = await validateSymbol(cleanSymbol);
       
-      if (!isValidSymbol) {
+      if (!priceData) {
         setError(`"${cleanSymbol}" sembolü bulunamadı veya fiyat bilgisi alınamıyor. Lütfen geçerli bir sembol giriniz.`);
         setValidating(false); // validation bitti
         return;
       }
+      validatedPriceData = priceData;
       setValidating(false); // validation bitti
     }
 
@@ -157,7 +159,7 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
-    onAddHolding(newHolding);
+    onAddHolding(newHolding, validatedPriceData);
 
     setSuccess('Varlık başarıyla eklendi ve fiyat bilgisi doğrulandı!');
     

@@ -204,47 +204,62 @@ export class TefasService {
     const today = dayjs();
 
     // TEFAS API büyük tarih aralıklarını desteklemiyor
-    // 3 aydan büyük aralıklar için birden fazla sorgu yapıp birleştiriyoruz
+    // Birden fazla sorgu yapıp birleştiriyoruz
     const chunkMonths = 3; // Her sorgu maksimum 3 ay
+
+    // 1w için gün bazında başlangıç tarihi hesapla, diğerleri ay bazında
+    let startDate: dayjs.Dayjs;
     let totalMonths: number;
 
     switch (range) {
-      case '1w': totalMonths = 0.25; break;
-      case '1mo': totalMonths = 1; break;
-      case '3mo': totalMonths = 3; break;
-      case '6mo': totalMonths = 6; break;
-      case '1y': totalMonths = 12; break;
-      case '3y': totalMonths = 36; break;
-      case '5y': totalMonths = 60; break;
-      default: totalMonths = 3;
-    }
-
-    // 3 ay veya daha az için tek sorgu
-    if (totalMonths <= chunkMonths) {
-      return this.fetchHistoricalChunk(fundCode, today.subtract(totalMonths, 'months'), today);
-    }
-
-    // Büyük aralıklar için parçalı sorgular
-    const chunks: Promise<HistoricalPrice[]>[] = [];
-    let endDate = today;
-
-    for (let remaining = totalMonths; remaining > 0; remaining -= chunkMonths) {
-      const monthsToFetch = Math.min(remaining, chunkMonths);
-      const startDate = endDate.subtract(monthsToFetch, 'months');
-      chunks.push(this.fetchHistoricalChunk(fundCode, startDate, endDate));
-      endDate = startDate;
+      case '1w':
+        startDate = today.subtract(7, 'day');
+        totalMonths = 0; // Chunking'e girmemesi için
+        break;
+      case '1mo':
+        startDate = today.subtract(1, 'month');
+        totalMonths = 1;
+        break;
+      case '3mo':
+        startDate = today.subtract(3, 'month');
+        totalMonths = 3;
+        break;
+      case '6mo': totalMonths = 6; startDate = today.subtract(6, 'month'); break;
+      case '1y': totalMonths = 12; startDate = today.subtract(12, 'month'); break;
+      case '3y': totalMonths = 36; startDate = today.subtract(36, 'month'); break;
+      case '5y': totalMonths = 60; startDate = today.subtract(60, 'month'); break;
+      default: totalMonths = 3; startDate = today.subtract(3, 'month');
     }
 
     try {
-      const results = await Promise.all(chunks);
-      // Tüm sonuçları birleştir ve tarihe göre sırala
-      const allData = results.flat();
+      let allData: HistoricalPrice[];
 
-      // Tekrar eden tarihleri kaldır
+      // 3 ay veya daha az için tek sorgu
+      if (totalMonths <= chunkMonths) {
+        allData = await this.fetchHistoricalChunk(fundCode, startDate, today);
+      } else {
+        // Büyük aralıklar için parçalı sorgular
+        const chunks: Promise<HistoricalPrice[]>[] = [];
+        let endDate = today;
+
+        for (let remaining = totalMonths; remaining > 0; remaining -= chunkMonths) {
+          const monthsToFetch = Math.min(remaining, chunkMonths);
+          const chunkStart = endDate.subtract(monthsToFetch, 'month');
+          chunks.push(this.fetchHistoricalChunk(fundCode, chunkStart, endDate));
+          endDate = chunkStart;
+        }
+
+        const results = await Promise.all(chunks);
+        allData = results.flat();
+      }
+
+      // Tekrar eden tarihleri kaldır ve sırala
       const uniqueData = new Map<string, HistoricalPrice>();
       allData.forEach(item => uniqueData.set(item.date, item));
 
-      return Array.from(uniqueData.values()).sort((a, b) => a.date.localeCompare(b.date));
+      return Array.from(uniqueData.values())
+        .filter(item => item.price > 0) // Sıfır fiyatlı kayıtları çıkar
+        .sort((a, b) => a.date.localeCompare(b.date));
     } catch (error) {
       console.error(`TEFAS API historical data error for ${fundCode}:`, error);
       throw new Error('TEFAS historical data could not be fetched.');

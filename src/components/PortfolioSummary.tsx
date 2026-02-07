@@ -26,7 +26,7 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
   return (
     <>
       {/* Toplam Değer Kartı */}
-      <Grid size={{ xs: 12, md: 6 }}>
+      <Grid size={{ xs: 12 }}>
         <Paper sx={{ 
           p: 2, 
           textAlign: 'center', 
