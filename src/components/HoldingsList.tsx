@@ -11,6 +11,7 @@ import { StockAnalysisDialog } from './StockAnalysisDialog';
 import { AssetDetailDialog } from './AssetDetailDialog';
 import { useAppSelector } from '../hooks/redux';
 import { useBackButton } from '../hooks/useBackButton';
+import { useTheme } from '../contexts/ThemeContext';
 import { HoldingRowItem } from './HoldingRowItem';
 
 interface HoldingsListProps {
@@ -29,6 +30,7 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
   onDeleteHolding
 }) => {
   const updatingSymbols = useAppSelector((state) => state.portfolio.updatingSymbols);
+  const { isDarkMode } = useTheme();
   const [expandedPanels, setExpandedPanels] = useState<string[]>(['CURRENCY', 'STOCK', 'FUND']);
   const [analysisDialogOpen, setAnalysisDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
@@ -139,26 +141,37 @@ export const HoldingsList: React.FC<HoldingsListProps> = ({
           const isExpanded = expandedPanels.includes(type);
           return (
             <Accordion key={type} expanded={isExpanded} onChange={() => handlePanelChange(type)}
-              sx={{ mb: 2, '&:before': { display: 'none' }, boxShadow: 1, borderRadius: 2, overflow: 'hidden' }}
+              sx={{ mb: 2, overflow: 'hidden' }}
             >
               <AccordionSummary expandIcon={<ExpandMoreIcon />}
                 sx={{
-                  backgroundColor: 'primary.main',
-                  color: 'primary.contrastText',
+                  background: isDarkMode
+                    ? 'linear-gradient(135deg, rgba(255, 171, 0, 0.15) 0%, rgba(255, 143, 0, 0.08) 100%)'
+                    : 'linear-gradient(135deg, rgba(230, 81, 0, 0.12) 0%, rgba(255, 109, 0, 0.06) 100%)',
+                  color: 'text.primary',
                   '& .MuiAccordionSummary-content': { alignItems: 'center' },
-                  '&:hover': { backgroundColor: 'primary.main' }
+                  '& .MuiAccordionSummary-expandIconWrapper': {
+                    color: isDarkMode ? '#FFAB00' : '#E65100'
+                  },
+                  borderBottom: '1px solid',
+                  borderColor: isDarkMode
+                    ? 'rgba(255, 171, 0, 0.15)'
+                    : 'rgba(230, 81, 0, 0.1)',
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', mr: { xs: 0, sm: 2 } }}>
-                  <Typography variant="subtitle1" fontWeight="bold" sx={{ fontSize: { xs: '1rem', sm: '1.1rem' } }}>
-                    {typeLabels[type]} ({typeHoldings.length})
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ fontSize: { xs: '0.95rem', sm: '1rem' } }}>
+                    {typeLabels[type]}
+                    <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
+                      ({typeHoldings.length})
+                    </Typography>
                   </Typography>
-                  <Typography variant="subtitle1" fontWeight="bold" sx={{ flex: '0 0 140px', textAlign: 'right', fontSize: { xs: '1rem', sm: '1.1rem' } }}>
+                  <Typography variant="subtitle1" fontWeight={700} color="primary" sx={{ flex: '0 0 140px', textAlign: 'right', fontSize: { xs: '0.95rem', sm: '1rem' } }}>
                     ₺{categoryTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Box>
               </AccordionSummary>
-              <AccordionDetails sx={{ p: 0 }}>
+              <AccordionDetails sx={{ px: 0, py: 0.5 }}>
                 {typeHoldings.map((holding, index) => {
                   const priceData = prices[holding.symbol];
                   return (

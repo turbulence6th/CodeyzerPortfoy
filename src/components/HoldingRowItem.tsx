@@ -89,11 +89,14 @@ export const HoldingRowItem: React.FC<HoldingRowItemProps> = ({
       sx={{
         position: 'relative',
         borderBottom: isLast ? 'none' : '1px solid',
-        borderColor: 'divider',
-        backgroundColor: 'background.paper',
+        borderColor: isLast ? 'transparent' : 'rgba(128, 128, 128, 0.12)',
         display: 'flex',
         alignItems: 'center',
         pr: 1,
+        transition: 'background-color 0.15s ease',
+        '&:hover': {
+          backgroundColor: 'action.hover',
+        },
       }}
     >
       <Box
@@ -103,9 +106,9 @@ export const HoldingRowItem: React.FC<HoldingRowItemProps> = ({
           flexDirection: { xs: 'column', sm: 'row' },
           justifyContent: { xs: 'flex-start', sm: 'space-between' },
           alignItems: { xs: 'flex-start', sm: 'center' },
-          py: { xs: 0.5, sm: 1 },
-          pl: { xs: 1.5, sm: 2.5 },
-          pr: { xs: 0.75, sm: 2 },
+          py: { xs: 1.25, sm: 1.5 },
+          pl: { xs: 2, sm: 2.5 },
+          pr: { xs: 1, sm: 2 },
           gap: { xs: 0.5, sm: 0 },
         }}
       >
