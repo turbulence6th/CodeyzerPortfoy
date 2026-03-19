@@ -3,6 +3,7 @@ import type { PriceData, HistoricalPrice, AssetType } from '../models/types';
 import { tefasService } from './tefasService';
 import { USE_MOCK_API, config } from '../utils/config';
 import { mockAxiosGet } from './mockApiService';
+import { HttpService } from './httpService';
 
 // Twelve Data API response types (spot XAU/USD historical için)
 interface TwelveDataTimeSeriesResponse {
@@ -36,6 +37,17 @@ interface SwissquotePlatformData {
   spreadProfilePrices: SwissquoteProfilePrice[];
 }
 
+
+// Fintables UDF API response types (gayrimenkul sertifikaları vb.)
+interface FintablesUDFResponse {
+  s: string; // "ok" veya "no_data"
+  t: number[]; // Unix timestamps
+  o: number[]; // Open prices
+  h: number[]; // High prices
+  l: number[]; // Low prices
+  c: number[]; // Close prices
+  v: number[]; // Volumes
+}
 
 // Yahoo Finance Chart API response types
 interface YahooChartResponse {
@@ -79,6 +91,27 @@ const SWISSQUOTE_API_BASE_URL = isDevelopment
   ? '/api/swissquote' // Geliştirme için Vite proxy
   : 'https://forex-data-feed.swissquote.com'; // Üretim (Android dahil) için doğrudan API
 
+const FINTABLES_API_BASE_URL = isDevelopment
+  ? '/api/fintables/barbar/udf/history' // Geliştirme için Vite proxy
+  : 'https://gate.fintables.com/barbar/udf/history'; // Üretim için doğrudan API
+
+// Fintables Cloudflare korumasını aşmak için tarayıcı benzeri header'lar
+const FINTABLES_HEADERS: Record<string, string> = {
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'tr-TR,tr;q=0.6',
+  'Cache-Control': 'max-age=0',
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+  'sec-ch-ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Brave";v="146"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"macOS"',
+  'sec-fetch-dest': 'document',
+  'sec-fetch-mode': 'navigate',
+  'sec-fetch-site': 'none',
+  'sec-fetch-user': '?1',
+  'sec-gpc': '1',
+  'Upgrade-Insecure-Requests': '1',
+};
+
 // CORS proxy servisi (geliştirme aşamasında kullanılabilir)
 // const CORS_PROXY = 'https://cors-anywhere.herokuapp.com/';
 
@@ -104,6 +137,11 @@ export class PriceService {
     // GAUTRY'yi önceliklendir, çünkü GAU bir fon koduyla çakışıyor.
     if (['GAUTRY', 'XAUUSD'].includes(symbol)) {
       return 'COMMODITY';
+    }
+
+    // Kural: Gayrimenkul sertifikaları (.G uzantılı) - Fintables API kullanır
+    if (PriceService.isFintablesSymbol(symbol)) {
+      return 'STOCK';
     }
 
     // Kural: Döviz çiftleri
@@ -179,6 +217,13 @@ export class PriceService {
     const lastFridayString = getLocalDateString(lastFriday);
     
     return priceDate === lastFridayString;
+  }
+
+  /**
+   * Fintables API üzerinden veri çekilmesi gereken sembol mü? (örn. DMLKT.G gayrimenkul sertifikası)
+   */
+  public static isFintablesSymbol(symbol: string): boolean {
+    return symbol.endsWith('.G');
   }
 
   public static transformSymbol(symbol: string): string {
@@ -263,6 +308,11 @@ export class PriceService {
     // GAUTRY (Gram Altın TRY) için özel hesaplama
     if (symbol === 'GAUTRY' || symbol === 'GAU') {
       return this.fetchGoldHistoricalPrices(range);
+    }
+
+    // Fintables sembolü ise (.G uzantılı gayrimenkul sertifikaları)
+    if (PriceService.isFintablesSymbol(symbol)) {
+      return this.fetchFintablesHistoricalPrices(symbol, range);
     }
 
     // Eğer fon ise, her zaman TEFAS servisini kullan
@@ -367,6 +417,11 @@ export class PriceService {
       };
       // this.cache.set(symbol, { data: tryData, timestamp: Date.now() });
       return tryData;
+    }
+
+    // Fintables sembolü (.G uzantılı gayrimenkul sertifikaları)
+    if (PriceService.isFintablesSymbol(symbol)) {
+      return this.fetchFintablesPrice(symbol);
     }
 
     // Gram Altın (GAU) için özel yönlendirme
@@ -845,6 +900,135 @@ export class PriceService {
         error: errorMessage,
         lastUpdate: new Date().toISOString(),
       };
+    }
+  }
+
+  /**
+   * Fintables API'den tek bir sembol için fiyat çeker (gayrimenkul sertifikaları vb.)
+   * HttpService kullanır: native'de CapacitorHttp (Cloudflare bypass), web'de axios+proxy.
+   */
+  private async fetchFintablesPrice(symbol: string): Promise<PriceData> {
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - 10 * 86400; // Son 10 gün (hafta sonu/tatil durumu için geniş tut)
+    const url = `${FINTABLES_API_BASE_URL}?symbol=${symbol}&resolution=D&from=${from}&to=${now}`;
+
+    try {
+      const response = await HttpService.get(url, {
+        timeout: 15000,
+        headers: FINTABLES_HEADERS,
+      });
+
+      const data = response.data as FintablesUDFResponse;
+      if (data?.s !== 'ok' || !data.c || data.c.length === 0) {
+        console.warn(`⚠️ Fintables: ${symbol} için veri bulunamadı`);
+        return {
+          symbol,
+          price: 0,
+          change: 0,
+          changePercent: 0,
+          previousClose: 0,
+          historicalData: [],
+          lastUpdate: new Date().toISOString(),
+          error: 'Fintables verisi alınamadı',
+        };
+      }
+
+      const lastIndex = data.c.length - 1;
+      const currentPrice = data.c[lastIndex];
+      const previousClose = lastIndex > 0 ? data.c[lastIndex - 1] : currentPrice;
+      const change = currentPrice - previousClose;
+      const changePercent = previousClose !== 0 ? (change / previousClose) * 100 : 0;
+
+      console.log(`✅ Fintables ${symbol}:`, {
+        price: currentPrice,
+        previousClose,
+        change: change.toFixed(4),
+        changePercent: changePercent.toFixed(2) + '%',
+      });
+
+      return {
+        symbol,
+        price: Number(currentPrice.toFixed(4)),
+        change: Number(change.toFixed(4)),
+        changePercent: Number(changePercent.toFixed(2)),
+        previousClose,
+        historicalData: [],
+        lastUpdate: new Date().toISOString(),
+        name: symbol,
+        currency: 'TRY',
+        source: 'api',
+      };
+    } catch (error) {
+      console.error(`❌ Fintables error for ${symbol}:`, error);
+      return {
+        symbol,
+        price: 0,
+        change: 0,
+        changePercent: 0,
+        previousClose: 0,
+        historicalData: [],
+        lastUpdate: new Date().toISOString(),
+        error: 'Fintables verisi alınamadı',
+      };
+    }
+  }
+
+  /**
+   * Fintables API'den historical veri çeker (gayrimenkul sertifikaları vb.)
+   */
+  private async fetchFintablesHistoricalPrices(
+    symbol: string,
+    range: '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '3y' | '5y'
+  ): Promise<HistoricalPrice[]> {
+    const now = Math.floor(Date.now() / 1000);
+    const periodSeconds: Record<string, number> = {
+      '1d': 86400,
+      '1w': 7 * 86400,
+      '1mo': 31 * 86400,
+      '3mo': 93 * 86400,
+      '6mo': 186 * 86400,
+      '1y': 366 * 86400,
+      '3y': 3 * 366 * 86400,
+      '5y': 5 * 366 * 86400,
+    };
+    const from = now - (periodSeconds[range] || 31 * 86400);
+    const url = `${FINTABLES_API_BASE_URL}?symbol=${symbol}&resolution=D&from=${from}&to=${now}`;
+
+    try {
+      const response = await HttpService.get(url, {
+        timeout: 15000,
+        headers: FINTABLES_HEADERS,
+      });
+
+      const data = response.data as FintablesUDFResponse;
+      if (data?.s !== 'ok' || !data.t || !data.c) {
+        console.warn(`⚠️ Fintables historical: ${symbol} için veri bulunamadı`);
+        return [];
+      }
+
+      const historicalData: HistoricalPrice[] = [];
+      for (let i = 0; i < data.t.length; i++) {
+        const price = data.c[i];
+        const timestamp = data.t[i];
+
+        if (price != null && timestamp != null) {
+          historicalData.push({
+            date: new Date(timestamp * 1000).toISOString().split('T')[0],
+            price,
+          });
+        }
+      }
+
+      console.log(`✅ Fintables historical ${symbol} (${range}):`, {
+        'Toplam veri': historicalData.length,
+        'İlk tarih': historicalData[0]?.date,
+        'Son tarih': historicalData[historicalData.length - 1]?.date,
+      });
+
+      return historicalData;
+    } catch (error) {
+      console.error(`❌ Fintables historical error for ${symbol}:`, error);
+      return [];
     }
   }
 
