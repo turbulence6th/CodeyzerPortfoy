@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Grid,
   Box,
@@ -15,7 +15,6 @@ import { EditHoldingDialog } from '../components/EditHoldingDialog';
 import { DeleteHoldingDialog } from '../components/DeleteHoldingDialog';
 import { PullToRefresh } from '../components/PullToRefresh';
 import { DailyMovers } from '../components/DailyMovers';
-import { sendHoldingsToWatch, prepareHoldingsForWatch } from '../api/watchService';
 import type { Holding, PriceData } from '../models/types';
 
 interface DashboardProps {
@@ -53,16 +52,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   useBackButton(() => setAddDialogOpen(false), addDialogOpen);
   useBackButton(handleCloseEditDialog, editDialogOpen);
   useBackButton(handleCloseDeleteDialog, deleteDialogOpen);
-
-  // Apple Watch'a holdings listesini gönder (varlık eklendiğinde/değiştiğinde)
-  useEffect(() => {
-    if (holdings.length > 0) {
-      const watchHoldings = prepareHoldingsForWatch(holdings);
-      sendHoldingsToWatch(watchHoldings).catch(() => {
-        // Hata durumunda sessizce devam et
-      });
-    }
-  }, [holdings]);
 
   const handleAddHolding = (holding: Holding, initialPriceData?: PriceData) => {
     dispatch(addHolding(holding));
