@@ -14,6 +14,7 @@ import { AddHoldingDialog } from '../components/AddHoldingDialog';
 import { EditHoldingDialog } from '../components/EditHoldingDialog';
 import { DeleteHoldingDialog } from '../components/DeleteHoldingDialog';
 import { PullToRefresh } from '../components/PullToRefresh';
+import { DailyMovers } from '../components/DailyMovers';
 import { sendHoldingsToWatch, prepareHoldingsForWatch } from '../api/watchService';
 import type { Holding, PriceData } from '../models/types';
 
@@ -118,6 +119,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
             loading={loading}
             totalDebt={totalDebt}
           />
+
+          {/* Günlük Hareketler */}
+          <DailyMovers holdings={holdings} prices={prices} />
 
           {/* Portföy Detayları */}
           <Grid size={{ xs: 12 }}>
