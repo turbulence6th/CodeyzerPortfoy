@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Grid,
   Box,
@@ -15,6 +15,7 @@ import { EditHoldingDialog } from '../components/EditHoldingDialog';
 import { DeleteHoldingDialog } from '../components/DeleteHoldingDialog';
 import { PullToRefresh } from '../components/PullToRefresh';
 import { DailyMovers } from '../components/DailyMovers';
+import { saveHoldingsToAppGroup } from '../api/holdingsService';
 import type { Holding, PriceData } from '../models/types';
 
 interface DashboardProps {
@@ -52,6 +53,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onRefresh }) => {
   useBackButton(() => setAddDialogOpen(false), addDialogOpen);
   useBackButton(handleCloseEditDialog, editDialogOpen);
   useBackButton(handleCloseDeleteDialog, deleteDialogOpen);
+
+  // Holdings değiştiğinde App Group'a kaydet (Widget okuyabilsin)
+  useEffect(() => {
+    if (holdings.length > 0 && Object.keys(prices).length > 0) {
+      saveHoldingsToAppGroup(holdings.map(h => ({
+        id: h.id,
+        symbol: h.symbol,
+        name: prices[h.symbol]?.name || h.name,
+        type: h.type,
+        amount: h.amount,
+        price: prices[h.symbol]?.price ?? 0,
+        changePercent: prices[h.symbol]?.changePercent ?? 0,
+      })));
+    }
+  }, [holdings, prices]);
 
   const handleAddHolding = (holding: Holding, initialPriceData?: PriceData) => {
     dispatch(addHolding(holding));

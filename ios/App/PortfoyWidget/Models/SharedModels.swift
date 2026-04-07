@@ -7,7 +7,7 @@
 
 import Foundation
 
-// MARK: - Holdings (iOS'tan gelen varlık listesi)
+// MARK: - Holdings
 
 struct WatchHolding: Codable, Identifiable {
     let id: String
@@ -16,14 +16,41 @@ struct WatchHolding: Codable, Identifiable {
     let type: String  // CURRENCY, FUND, STOCK, COMMODITY
     let amount: Double
 
-    // Hesaplanan değerler (Watch'ta doldurulur)
+    // Hesaplanan değerler (PriceService tarafından doldurulur)
     var price: Double = 0
     var value: Double = 0
     var change: Double = 0
     var changePercent: Double = 0
+
+    init(id: String, symbol: String, name: String, type: String, amount: Double,
+         price: Double = 0, value: Double = 0, change: Double = 0, changePercent: Double = 0) {
+        self.id = id
+        self.symbol = symbol
+        self.name = name
+        self.type = type
+        self.amount = amount
+        self.price = price
+        self.value = value
+        self.change = change
+        self.changePercent = changePercent
+    }
+
+    // Eksik fiyat alanları için özel decoder (iPhone'dan gelen JSON'da bu alanlar olmayabilir)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        name = try container.decode(String.self, forKey: .name)
+        type = try container.decode(String.self, forKey: .type)
+        amount = try container.decode(Double.self, forKey: .amount)
+        price = try container.decodeIfPresent(Double.self, forKey: .price) ?? 0
+        value = try container.decodeIfPresent(Double.self, forKey: .value) ?? 0
+        change = try container.decodeIfPresent(Double.self, forKey: .change) ?? 0
+        changePercent = try container.decodeIfPresent(Double.self, forKey: .changePercent) ?? 0
+    }
 }
 
-// MARK: - Portfolio Summary (Watch'ta hesaplanır)
+// MARK: - Portfolio Summary
 
 struct PortfolioSummary {
     var totalValue: Double = 0
@@ -34,7 +61,7 @@ struct PortfolioSummary {
     static let empty = PortfolioSummary()
 }
 
-// MARK: - Price Response Models
+// MARK: - Yahoo Finance API Models
 
 struct YahooChartResponse: Codable {
     let chart: YahooChart
@@ -60,7 +87,7 @@ struct YahooError: Codable {
     let description: String?
 }
 
-// MARK: - UserDefaults Extension
+// MARK: - UserDefaults Extension (App Group)
 
 extension UserDefaults {
     static let appGroup = UserDefaults(suiteName: "group.com.codeyzer.portfoy") ?? .standard
