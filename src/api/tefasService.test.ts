@@ -6,14 +6,12 @@ import type { FundHistoryItem } from './tefasService'; // Gerçek tip import edi
 describe('TefasService.processFundHistory', () => {
 
   const createMockHistoryItem = (date: string, price: number, code = 'AFA', name = 'Test Fonu'): FundHistoryItem => ({
-    TARIH: new Date(date).getTime().toString(),
-    FIYAT: price,
-    FONKODU: code,
-    FONUNVAN: name,
-    TEDPAYSAYISI: 0,
-    KISISAYISI: 0,
-    PORTFOYBUYUKLUK: 0,
-    BORSABULTENFIYAT: '',
+    tarih: date,
+    fiyat: price,
+    fonKodu: code,
+    fonUnvan: name,
+    kategoriDerece: 0,
+    kategoriFonSay: 0,
   });
   
   const today = '2023-08-23';
