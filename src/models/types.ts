@@ -7,6 +7,8 @@ export interface Holding {
   name: string;          // Görünen ad
   amount: number;        // adet / gram
   note?: string;        // opsiyonel not
+  buyTargetMin?: number; // Alım aralığı alt sınırı (TRY) — fiyat bu aralığa girince satır vurgulanır
+  buyTargetMax?: number; // Alım aralığı üst sınırı (TRY)
   createdAt: string;     // Oluşturma tarihi
   updatedAt: string;     // Güncelleme tarihi
 }

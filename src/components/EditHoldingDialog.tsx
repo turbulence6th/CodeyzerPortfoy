@@ -30,6 +30,8 @@ export const EditHoldingDialog: React.FC<EditHoldingDialogProps> = ({
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [buyTargetMin, setBuyTargetMin] = useState('');
+  const [buyTargetMax, setBuyTargetMax] = useState('');
   const [error, setError] = useState('');
 
   const theme = useTheme();
@@ -40,6 +42,8 @@ export const EditHoldingDialog: React.FC<EditHoldingDialogProps> = ({
       setSymbol(holding.symbol);
       setAmount(holding.amount.toString());
       setNote(holding.note || '');
+      setBuyTargetMin(holding.buyTargetMin != null ? holding.buyTargetMin.toString() : '');
+      setBuyTargetMax(holding.buyTargetMax != null ? holding.buyTargetMax.toString() : '');
     }
   }, [holding, open]);
 
@@ -59,12 +63,37 @@ export const EditHoldingDialog: React.FC<EditHoldingDialogProps> = ({
       return;
     }
 
+    const minTrim = buyTargetMin.trim();
+    const maxTrim = buyTargetMax.trim();
+    let parsedMin: number | undefined;
+    let parsedMax: number | undefined;
+    if (holding?.type === 'STOCK' && (minTrim || maxTrim)) {
+      if (!minTrim || !maxTrim) {
+        setError('Alım aralığı için hem alt hem üst sınır girilmeli');
+        return;
+      }
+      const minNum = parseFloat(minTrim);
+      const maxNum = parseFloat(maxTrim);
+      if (isNaN(minNum) || isNaN(maxNum) || minNum <= 0 || maxNum <= 0) {
+        setError('Alım aralığı değerleri 0\'dan büyük olmalı');
+        return;
+      }
+      if (minNum > maxNum) {
+        setError('Alım aralığı alt sınırı üst sınırdan büyük olamaz');
+        return;
+      }
+      parsedMin = minNum;
+      parsedMax = maxNum;
+    }
+
     if (holding) {
       const updates: Partial<Holding> = {
         symbol: symbol.toUpperCase().trim(),
         name: symbol.toUpperCase().trim(),
         amount: amountNum,
         note: note.trim() || undefined,
+        buyTargetMin: parsedMin,
+        buyTargetMax: parsedMax,
         updatedAt: new Date().toISOString(),
       };
 
@@ -76,6 +105,8 @@ export const EditHoldingDialog: React.FC<EditHoldingDialogProps> = ({
     setSymbol('');
     setAmount('');
     setNote('');
+    setBuyTargetMin('');
+    setBuyTargetMax('');
     setError('');
     onClose();
   };
@@ -117,6 +148,34 @@ export const EditHoldingDialog: React.FC<EditHoldingDialogProps> = ({
                 required
               />
             </Grid>
+
+            {/* Alım Aralığı — sadece STOCK */}
+            {holding.type === 'STOCK' && (
+              <>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Alım Alt Sınır ₺"
+                    type="number"
+                    value={buyTargetMin}
+                    onChange={(e) => setBuyTargetMin(e.target.value)}
+                    inputProps={{ step: 'any', min: 0 }}
+                    helperText="Opsiyonel"
+                  />
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Alım Üst Sınır ₺"
+                    type="number"
+                    value={buyTargetMax}
+                    onChange={(e) => setBuyTargetMax(e.target.value)}
+                    inputProps={{ step: 'any', min: 0 }}
+                    helperText="Fiyat aralığa girince satır vurgulanır"
+                  />
+                </Grid>
+              </>
+            )}
 
             {/* Not */}
             <Grid size={{ xs: 12 }}>

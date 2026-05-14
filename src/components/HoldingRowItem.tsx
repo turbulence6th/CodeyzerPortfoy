@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { 
+import {
   Box, IconButton, Chip, Skeleton, Menu,
   MenuItem, ListItemIcon, ListItemText, Tooltip, Typography
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import { isInBuyZone } from '../utils/targetPriceHelper';
 import {
   MdEdit as EditIcon,
   MdDelete as DeleteIcon,
@@ -45,6 +47,8 @@ export const HoldingRowItem: React.FC<HoldingRowItemProps> = ({
   const priceToUse = (priceData?.price === 0 && priceData.previousClose)
     ? priceData.previousClose
     : priceData?.price;
+
+  const inBuyZone = isInBuyZone(holding, priceData);
 
   // Each row now manages its own menu state
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -90,12 +94,19 @@ export const HoldingRowItem: React.FC<HoldingRowItemProps> = ({
         position: 'relative',
         borderBottom: isLast ? 'none' : '1px solid',
         borderColor: isLast ? 'transparent' : 'rgba(128, 128, 128, 0.12)',
+        borderLeft: '4px solid',
+        borderLeftColor: inBuyZone ? 'success.main' : 'transparent',
         display: 'flex',
         alignItems: 'center',
         pr: 1,
-        transition: 'background-color 0.15s ease',
+        backgroundColor: inBuyZone
+          ? (theme) => alpha(theme.palette.success.main, 0.08)
+          : 'transparent',
+        transition: 'background-color 0.2s ease, border-color 0.2s ease',
         '&:hover': {
-          backgroundColor: 'action.hover',
+          backgroundColor: inBuyZone
+            ? (theme) => alpha(theme.palette.success.main, 0.14)
+            : 'action.hover',
         },
       }}
     >
@@ -118,6 +129,18 @@ export const HoldingRowItem: React.FC<HoldingRowItemProps> = ({
             <Typography variant="subtitle1" fontWeight="medium">{symbol}</Typography>
             {sourceIcon}
             {staleDateIcon}
+            {inBuyZone && (
+              <Tooltip
+                title={`Alım aralığı: ₺${holding.buyTargetMin!.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} – ₺${holding.buyTargetMax!.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              >
+                <Chip
+                  size="small"
+                  color="success"
+                  label="Alım"
+                  sx={{ height: 18, fontSize: '0.65rem', '& .MuiChip-label': { px: 0.75 } }}
+                />
+              </Tooltip>
+            )}
           </Box>
           {priceData?.name && (
             <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', mb: 0.25 }}>

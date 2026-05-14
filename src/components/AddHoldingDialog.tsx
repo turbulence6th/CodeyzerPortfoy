@@ -85,6 +85,8 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
   const [symbol, setSymbol] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [buyTargetMin, setBuyTargetMin] = useState('');
+  const [buyTargetMax, setBuyTargetMax] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [validating, setValidating] = useState(false);
@@ -129,6 +131,30 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
       return;
     }
 
+    // Alım aralığı validasyonu (yalnızca STOCK)
+    const minTrim = buyTargetMin.trim();
+    const maxTrim = buyTargetMax.trim();
+    let parsedMin: number | undefined;
+    let parsedMax: number | undefined;
+    if (type === 'STOCK' && (minTrim || maxTrim)) {
+      if (!minTrim || !maxTrim) {
+        setError('Alım aralığı için hem alt hem üst sınır girilmeli');
+        return;
+      }
+      const minNum = parseFloat(minTrim);
+      const maxNum = parseFloat(maxTrim);
+      if (isNaN(minNum) || isNaN(maxNum) || minNum <= 0 || maxNum <= 0) {
+        setError('Alım aralığı değerleri 0\'dan büyük olmalı');
+        return;
+      }
+      if (minNum > maxNum) {
+        setError('Alım aralığı alt sınırı üst sınırdan büyük olamaz');
+        return;
+      }
+      parsedMin = minNum;
+      parsedMax = maxNum;
+    }
+
     const cleanSymbol = symbol.toUpperCase().trim();
     let validatedPriceData: PriceData | undefined;
 
@@ -155,6 +181,8 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
       name: cleanSymbol,
       amount: amountNum,
       note: note.trim() || undefined,
+      buyTargetMin: parsedMin,
+      buyTargetMax: parsedMax,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -191,6 +219,8 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
     setSymbol('');
     setAmount('');
     setNote('');
+    setBuyTargetMin('');
+    setBuyTargetMax('');
     setError('');
     setSuccess('');
     setValidating(false);
@@ -280,6 +310,36 @@ export const AddHoldingDialog: React.FC<AddHoldingDialogProps> = ({
                 disabled={success !== ''}
               />
             </Grid>
+
+            {/* Alım Aralığı — sadece STOCK */}
+            {type === 'STOCK' && (
+              <>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Alım Alt Sınır ₺"
+                    type="number"
+                    value={buyTargetMin}
+                    onChange={(e) => setBuyTargetMin(e.target.value)}
+                    inputProps={{ step: 'any', min: 0 }}
+                    helperText="Opsiyonel"
+                    disabled={success !== ''}
+                  />
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="Alım Üst Sınır ₺"
+                    type="number"
+                    value={buyTargetMax}
+                    onChange={(e) => setBuyTargetMax(e.target.value)}
+                    inputProps={{ step: 'any', min: 0 }}
+                    helperText="Fiyat aralığa girince satır vurgulanır"
+                    disabled={success !== ''}
+                  />
+                </Grid>
+              </>
+            )}
 
             {/* Not */}
             <Grid size={{ xs: 12 }}>
